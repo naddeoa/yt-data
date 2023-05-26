@@ -47,7 +47,6 @@ def init_client():
 
     api_service_name = "youtube"
     api_version = "v3"
-    api_key = "AIzaSyAVtfxaGEbi-kVmMvsYP3v3LxSSy6H02HM"
     client_secrets_file = "./secrets.json"
 
     try:
@@ -73,7 +72,9 @@ def init_client():
 def main():
     youtube = init_client()
 
-    for term in tqdm(search_terms, desc='terms', position=0):
+    progress = tqdm(search_terms, desc='terms', position=0)
+    for term in progress:
+        progress.set_description(term)
         request = youtube.search().list(part="snippet", maxResults=1000, q=term)
         response = request.execute()
 
