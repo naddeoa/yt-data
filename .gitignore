@@ -1,0 +1,5 @@
+data/
+secrets.json
+credentials.json
+*.pyc
+.vscode
