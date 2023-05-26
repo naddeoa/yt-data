@@ -16,6 +16,7 @@ from typing import TypedDict
 import requests
 import json
 from tqdm import tqdm
+from terms import search_terms
 
 scopes = ["https://www.googleapis.com/auth/youtube.force-ssl"]
 
@@ -39,8 +40,7 @@ def save_info(info):
     with open(f"./data/{id}.json", "w") as f:
         json.dump(info, f, indent=4)
 
-
-def main():
+def init_client():
     # Disable OAuthlib's HTTPS verification when running locally.
     # *DO NOT* leave this option enabled in production.
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
@@ -66,19 +66,23 @@ def main():
         with open("credentials.json", "w") as f:
             f.write(credentials.to_json())
 
-    youtube = googleapiclient.discovery.build(
+    return googleapiclient.discovery.build(
         api_service_name, api_version, credentials=credentials
     )
 
-    request = youtube.search().list(part="snippet", maxResults=100, q="gaming")
-    response = request.execute()
+def main():
+    youtube = init_client()
 
-    items = [
-        yoink_info(i) for i in response["items"] if i["id"]["kind"] == "youtube#video"
-    ]
+    for term in tqdm(search_terms, desc='terms', position=0):
+        request = youtube.search().list(part="snippet", maxResults=1000, q=term)
+        response = request.execute()
 
-    for info in tqdm(items):
-        save_info(info)
+        items = [
+            yoink_info(i) for i in response["items"] if i["id"]["kind"] == "youtube#video"
+        ]
+
+        for info in tqdm(items, desc='thumbnails', position=1, leave=False):
+            save_info(info)
 
 
 if __name__ == "__main__":
