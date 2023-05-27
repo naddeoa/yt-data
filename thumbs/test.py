@@ -8,14 +8,14 @@ import os
 
 from pprint import pprint
 import google_auth_oauthlib.flow
-import googleapiclient.discovery
-import googleapiclient.errors
-from google.oauth2 import service_account
-from google.oauth2.credentials import Credentials
+import googleapiclient.discovery  #  ignore: types
+import googleapiclient.errors  #  ignore: types
+from google.oauth2 import service_account  #  ignore: types
+from google.oauth2.credentials import Credentials  #  ignore: types
 from typing import TypedDict
-import requests
+import requests  #  ignore: types
 import json
-from tqdm import tqdm
+from tqdm import tqdm  #  ignore: types
 from terms import search_terms
 
 scopes = ["https://www.googleapis.com/auth/youtube.force-ssl"]
@@ -28,6 +28,9 @@ def yoink_info(response_items):
         "channel_title": response_items["snippet"]["channelTitle"],
         "description": response_items["snippet"]["description"],
         "id": response_items["id"]["videoId"],
+        "views": response_items["statistics"]["viewCount"],
+        "likeCount": response_items["statistics"]["likeCount"],
+        "commentCount": response_items["statistics"]["commentCount"],
     }
 
 
@@ -75,7 +78,7 @@ def main():
     progress = tqdm(search_terms, desc='terms', position=0)
     for term in progress:
         progress.set_description(term)
-        request = youtube.search().list(part="snippet", maxResults=1000, q=term)
+        request = youtube.search().list(part="snippet,statistics", maxResults=1000, q=term)
         response = request.execute()
 
         items = [
