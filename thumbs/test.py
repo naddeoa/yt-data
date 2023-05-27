@@ -60,7 +60,10 @@ def init_client() -> Any:
 
     api_service_name = "youtube"
     api_version = "v3"
-    client_secrets_file = "./secrets.json"
+
+    anthony_secret = '.secrets/anthony-secrets.json'
+    livelock_secret = '.secrets/livelockgg-secrets.json'
+    client_secrets_file = anthony_secret 
 
     try:
         # Load the credentials from the file
