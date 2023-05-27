@@ -8,13 +8,13 @@ import os
 import json
 
 from pprint import pprint
-from typing import Dict
+from typing import Dict, Any
 import google_auth_oauthlib.flow
 import googleapiclient.discovery  #  ignore: types
 import googleapiclient.errors  #  ignore: types
 from google.oauth2 import service_account  #  ignore: types
 from google.oauth2.credentials import Credentials  #  ignore: types
-from typing import TypedDict
+from typing import TypedDict, Optional
 import requests  #  ignore: types
 import json
 from tqdm import tqdm  #  ignore: types
@@ -23,20 +23,27 @@ from terms import search_terms
 scopes = ["https://www.googleapis.com/auth/youtube.force-ssl"]
 
 
-def yoink_info(response_items):
+class VideoData(TypedDict):
+    title: str
+    thumbnail_url: str
+    channel_title: str
+    description: str
+    id: str
+    views: Optional[str]
+
+
+def yoink_info(response_items: dict) -> VideoData:
     return {
         "title": response_items["snippet"]["title"],
         "thumbnail_url": response_items["snippet"]["thumbnails"]["high"]["url"],
         "channel_title": response_items["snippet"]["channelTitle"],
         "description": response_items["snippet"]["description"],
         "id": response_items["id"]["videoId"],
-        # "views": response_items["statistics"]["viewCount"],
-        # "likeCount": response_items["statistics"]["likeCount"],
-        # "commentCount": response_items["statistics"]["commentCount"],
+        "views": None,
     }
 
 
-def save_info(info):
+def save_info(info: Any) -> None:
     id = info["id"]
     img = requests.get(info["thumbnail_url"])
     with open(f"./data/{id}.jpg", "wb") as f:
@@ -45,7 +52,8 @@ def save_info(info):
     with open(f"./data/{id}.json", "w") as f:
         json.dump(info, f, indent=4)
 
-def init_client():
+
+def init_client() -> Any:
     # Disable OAuthlib's HTTPS verification when running locally.
     # *DO NOT* leave this option enabled in production.
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
@@ -74,79 +82,77 @@ def init_client():
         api_service_name, api_version, credentials=credentials
     )
 
-def apply_view_counts(youtube):
+
+def enrich_view_counts(youtube: Any) -> None:
     viewless_metadata: Dict[str, dict] = {}
-    for filename in os.listdir('./data'):
-        file_path = os.path.join('./data', filename)
-        if filename.endswith('.json') and os.path.isfile(file_path):
-            with open(file_path, 'r') as file:
+    for filename in os.listdir("./data"):
+        file_path = os.path.join("./data", filename)
+        if filename.endswith(".json") and os.path.isfile(file_path):
+            with open(file_path, "r") as file:
                 json_data = file.read()
                 data_dict = json.loads(json_data)
-                if 'viewCount' not in data_dict or  type(data_dict['viewCount']) == str:
-                    viewless_metadata[data_dict['id']] = data_dict
+                if "viewCount" not in data_dict or type(data_dict["viewCount"]) == str:
+                    viewless_metadata[data_dict["id"]] = data_dict
 
-    print(f'Found {len(viewless_metadata)} videos without view counts.')
+    print(f"Found {len(viewless_metadata)} videos without view counts.")
 
     batch_size = 50
     items = list(viewless_metadata.items())
 
     handled = 0
     for i in tqdm(range(0, len(items), batch_size)):
-        batch = items[i:i+batch_size]
+        batch = items[i : i + batch_size]
 
-        csv_ids = ','.join([id for id, _ in batch])
-        request = youtube.videos().list(
-            part="snippet,statistics",
-            id=csv_ids
-        )
+        csv_ids = ",".join([id for id, _ in batch])
+        request = youtube.videos().list(part="snippet,statistics", id=csv_ids)
         response = request.execute()
 
         # get statistics.viewCount, update the dict in ids, save the json file again
-        for item in response['items']:
-            id = item['id']
-            viewless_metadata[id]['viewCount'] = int(item['statistics']['viewCount'])
+        for item in response["items"]:
+            id = item["id"]
+            viewless_metadata[id]["viewCount"] = int(item["statistics"]["viewCount"])
             handled += 1
-            # These aren't always here
-            # viewless_metadata[id]['likeCount'] = item['statistics']['likeCount'] 
-            # viewless_metadata[id]['commentCount'] = item['statistics']['commentCount']
 
-        
     # Save everything in viewless_metadata to ./data/{id}.json
     for id, metadata in viewless_metadata.items():
         with open(f"./data/{id}.json", "w") as f:
             json.dump(metadata, f, indent=4)
 
-    print('Updated view counts for', handled, 'videos')
+    print("Updated view counts for", handled, "videos")
 
 
-def search_videos(youtube):
-    progress = tqdm(search_terms, desc='terms', position=0)
+def search_videos(youtube: Any) -> None:
+    progress = tqdm(search_terms, desc="terms", position=0)
     for term in progress:
         progress.set_description(term)
-        request = youtube.search().list(part="snippet", maxResults=1000, q=term, type='video', order='viewCount')
+        request = youtube.search().list(
+            part="snippet", maxResults=1000, q=term, type="video", order="viewCount"
+        )
         response = request.execute()
 
         items = [
-            yoink_info(i) for i in response["items"] if i["id"]["kind"] == "youtube#video"
+            yoink_info(i)
+            for i in response["items"]
+            if i["id"]["kind"] == "youtube#video"
         ]
 
-        for info in tqdm(items, desc='thumbnails', position=1, leave=False):
+        for info in tqdm(items, desc="thumbnails", position=1, leave=False):
             save_info(info)
 
+        enrich_view_counts(youtube)
 
-def list_topics(youtube):
-    request = youtube.videoCategories().list(
-        part="snippet",
-        regionCode="US"
-    )
+
+def list_topics(youtube: Any) -> None:
+    request = youtube.videoCategories().list(part="snippet", regionCode="US")
     response = request.execute()
     pprint(response)
 
 
-def main():
+def main() -> None:
     youtube = init_client()
-    # search_videos(youtube)
-    apply_view_counts(youtube)
+    enrich_view_counts(youtube)
+    search_videos(youtube)
+
 
 if __name__ == "__main__":
     main()
