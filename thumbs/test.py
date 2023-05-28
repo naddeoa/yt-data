@@ -7,6 +7,7 @@
 import os
 import json
 
+from pathlib import Path
 from pprint import pprint
 from typing import Dict, Any
 import google_auth_oauthlib.flow
@@ -60,16 +61,18 @@ def init_client() -> Any:
 
     api_service_name = "youtube"
     api_version = "v3"
+    credentials_file = "./credentials.json"
 
-    anthony_secret = '.secrets/anthony-secrets.json'
-    livelock_secret = '.secrets/livelockgg-secrets.json'
-    client_secrets_file = anthony_secret 
+    anthony_secret = './secrets/anthony-secrets.json'
+    livelock_secret = './secrets/livelockgg-secrets.json'
+    thumbs_secret = './secrets/thumbs-project-gg-secrets.json'
+    client_secrets_file = livelock_secret
 
     try:
         # Load the credentials from the file
-        credentials = Credentials.from_authorized_user_file("./credentials.json")
+        credentials = Credentials.from_authorized_user_file(credentials_file)
     except Exception as e:
-        print(e)
+        # print(e)
 
         # Get credentials and create an API client
         flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
@@ -78,7 +81,8 @@ def init_client() -> Any:
         credentials = flow.run_local_server()
 
         # Save the credentials for future use
-        with open("credentials.json", "w") as f:
+        Path(credentials_file).touch()
+        with open("./credentials.json", "w") as f:
             f.write(credentials.to_json())
 
     return googleapiclient.discovery.build(
