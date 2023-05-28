@@ -6,3 +6,4 @@ credentials.json
 *.tgz
 /.venv
 secrets/
+model/

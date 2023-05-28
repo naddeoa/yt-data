@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "yt-data"
+version = "0.1.0"
+description = ""
+authors = ["Anthony Naddeo <anthony@whylabs.ai>"]
+readme = "README.md"
+packages = [{include = "yt_data"}]
+
+[tool.poetry.dependencies]
+# Any python version
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
