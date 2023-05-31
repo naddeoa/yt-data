@@ -7,3 +7,4 @@ credentials.json
 /.venv
 secrets/
 model/
+predictions

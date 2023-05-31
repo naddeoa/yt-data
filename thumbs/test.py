@@ -66,6 +66,7 @@ def init_client() -> Any:
     anthony_secret = './secrets/anthony-secrets.json'
     livelock_secret = './secrets/livelockgg-secrets.json'
     thumbs_secret = './secrets/thumbs-project-gg-secrets.json'
+    client_secrets_file = livelock_secret
 
     try:
         # Load the credentials from the file
@@ -157,7 +158,7 @@ def list_topics(youtube: Any) -> None:
 def main() -> None:
     youtube = init_client()
     enrich_view_counts(youtube)
-    # search_videos(youtube)
+    search_videos(youtube)
 
 
 if __name__ == "__main__":
