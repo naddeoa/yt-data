@@ -25,7 +25,7 @@ class Model(ABC):
         discriminator = self.build_discriminator(self.params.img_shape)
         discriminator.compile(
             loss="binary_crossentropy",
-            optimizer=Adam(learning_rate=self.mparams.discriminator_learning_rate),
+            optimizer=Adam(learning_rate=self.mparams.dis_learning_rate),
             metrics=["accuracy"],
         )
 
@@ -37,6 +37,6 @@ class Model(ABC):
 
         # Build and compile GAN model with fixed Discriminator to train the Generator
         gan = self.build_gan(generator, discriminator)
-        generator_optimizer = Adam(learning_rate=self.mparams.generator_learning_rate)
+        generator_optimizer = Adam(learning_rate=self.mparams.gen_learning_rate)
 
         return gan, discriminator, generator, generator_optimizer

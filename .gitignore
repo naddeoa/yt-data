@@ -6,3 +6,5 @@ credentials.json
 *.tgz
 /.venv
 secrets/
+old_stuff
+experiments

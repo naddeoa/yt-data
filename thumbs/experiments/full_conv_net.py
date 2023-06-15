@@ -18,36 +18,36 @@ class FullConvTrainingSchedule(Experiment):
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
         phase1 = MutableHyperParams(
-            generator_learning_rate=0.0001,
-            discriminator_learning_rate=0.00001,
+            gen_learning_rate=0.0001,
+            dis_learning_rate=0.00001,
             iterations=2000,
             sample_interval=100,
         )
         schedule[0,2000] = phase1
 
         phase2 = MutableHyperParams(
-            generator_learning_rate=0.0001,
-            discriminator_learning_rate=0.0001,
+            gen_learning_rate=0.0001,
+            dis_learning_rate=0.0001,
             iterations=5300,
             sample_interval=100,
         )
         schedule[2001,7300] = phase2
 
         phase3 = MutableHyperParams(
-            generator_learning_rate=0.0001,
-            discriminator_learning_rate=0.00005,
+            gen_learning_rate=0.0001,
+            dis_learning_rate=0.00005,
             iterations=2000,
             sample_interval=100,
         )
         schedule[7301,9300] = phase3
 
         phase4 = MutableHyperParams(
-            generator_learning_rate=0.0001,
-            discriminator_learning_rate=0.000075,
+            gen_learning_rate=0.0001,
+            dis_learning_rate=0.000075,
             iterations=200000,  # +1300 + 13500
             sample_interval=100,
         )
-        # Can start to distinguish the beginning of objects around 7k iterations of phase4
+        # Can start to distinguish the beginning of objects around ~17k iterations
         schedule[9301,infinity] = phase4
 
         return schedule
