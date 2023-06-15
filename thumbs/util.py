@@ -30,5 +30,5 @@ def create_batches(lst, batch_size, length):
 
 def get_current_time() -> str:
     now = datetime.now()
-    return now.strftime("%Y-%m-%d_%I-%M_%p")
-    # return now.strftime("%Y-%m-%d %H-%M")
+    # return now.strftime("%Y-%m-%d_%I-%M_%p")
+    return now.strftime("%Y-%m-%d %H-%M")

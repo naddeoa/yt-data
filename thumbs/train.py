@@ -127,10 +127,13 @@ class Train:
                 self.accuracies.append(100.0 * accuracy)
                 self.iteration_checkpoints.append(iteration + 1)
 
+                num_images_seen = float(iteration * self.params.batch_size)
+                epochs = num_images_seen / dataset.shape[0]
+
                 # Output training progress
                 print(
-                    "%d [D loss: %f, acc.: %.2f%%] [G loss: %f]"
-                    % (iteration + 1, d_loss, 100.0 * accuracy, g_loss)
+                    "%d [D loss: %f, acc.: %.2f%%] [G loss: %f] [Epochs: %f]]"
+                    % (iteration + 1, d_loss, 100.0 * accuracy, g_loss, epochs)
                 )
 
                 # Output a sample of generated image
