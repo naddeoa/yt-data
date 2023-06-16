@@ -182,7 +182,7 @@ def visualize_thumbnails(image_list, rows, cols, dir, file_name):
 def show_samples(generator, latent_dim, file_name, dir: str, rows=1, cols=10, dataset=None):
     # noise = np.random.uniform(-1, 1, size=(rows * cols, latent_dim))
     noise = np.random.normal(0, 1, (rows * cols, latent_dim))
-    generated_thumbnails = generator.predict(noise)
+    generated_thumbnails = generator.predict(noise, verbose=0)
     visualize_thumbnails(generated_thumbnails, rows, cols, dir, file_name)
 
     # if dataset is not None:

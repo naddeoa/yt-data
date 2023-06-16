@@ -69,57 +69,63 @@ class Train(ABC):
         # Labels for fake images: all zeros
         initial_sample = False
 
-        progress = tqdm(range(start_iter, iterations), total=iterations, initial=start_iter)
+        accuracies = []
+
+        s = tf.data.Dataset.from_tensor_slices(dataset)
+        progress = tqdm(range(start_iter, iterations), total=iterations, initial=start_iter, position=0, leave=True, desc="epoch")
         for iteration in progress:
-            # Get a random batch of real images
-            idx = np.random.randint(0, dataset.shape[0], self.params.batch_size)
-            imgs = dataset[idx]
+            batches = s.shuffle(buffer_size=1024).batch(self.params.batch_size, drop_remainder=True)
+            batch_progress = tqdm(batches, position=1, leave=False, desc="batch")
+            for imgs in batch_progress:
+                # Generate a batch of fake images
+                z = np.random.normal(0, 1, (self.params.batch_size, self.params.latent_dim))
+                gen_imgs = self.generator.predict(z, verbose=0)
 
-            # Generate a batch of fake images
-            z = np.random.normal(0, 1, (self.params.batch_size, self.params.latent_dim))
-            gen_imgs = self.generator.predict(z, verbose=0)
+                # -------------------------
+                #  Train the Discriminator
+                # -------------------------
+                (
+                    d_loss,
+                    d_loss_fake,
+                    d_loss_real,
+                    d_acc,
+                    d_fake_acc,
+                    d_real_acc,
+                ) = self.train_discriminator(gen_imgs, imgs)
 
-            # -------------------------
-            #  Train the Discriminator
-            # -------------------------
-            (
-                d_loss,
-                d_loss_fake,
-                d_loss_real,
-                d_acc,
-                d_fake_acc,
-                d_real_acc,
-            ) = self.train_discriminator(gen_imgs, imgs)
+                # ---------------------
+                #  Train the Generator
+                # ---------------------
+                z = np.random.normal(0, 1, (self.params.batch_size, self.params.latent_dim))
+                gen_imgs = self.generator.predict(z, verbose=0)
+                g_loss = self.train_generator(z)
 
-            # ---------------------
-            #  Train the Generator
-            # ---------------------
-            z = np.random.normal(0, 1, (self.params.batch_size, self.params.latent_dim))
-            gen_imgs = self.generator.predict(z, verbose=0)
-            g_loss = self.train_generator(z)
+                progress.set_postfix(
+                    {
+                        "d_loss": trunc(d_loss),
+                        "g_loss": trunc(g_loss),
+                        "d_acc": trunc(d_acc),
+                        "d_fake_acc": trunc(d_fake_acc),
+                        "d_real_acc": trunc(d_real_acc),
+                    }
+                )
 
-            progress.set_postfix(
-                {
-                    "d_loss": trunc(d_loss),
-                    "g_loss": trunc(g_loss),
-                    "d_acc": trunc(d_acc),
-                    "d_fake_acc": trunc(d_fake_acc),
-                    "d_real_acc": trunc(d_real_acc),
-                }
-            )
+                accuracies.append(d_acc)
 
-            self.save_sample(
+            updated = self.save_sample(
                 iteration=iteration,
                 sample_interval=sample_interval,
                 initial_sample=initial_sample,
                 dataset=dataset,
                 d_loss=d_loss,
                 g_loss=g_loss,
-                d_acc=d_acc,
+                accuracies=accuracies,
                 d_fake_acc=d_fake_acc,
                 d_real_acc=d_real_acc,
             )
-            initial_sample = True
+            if updated:
+                initial_sample = True
+                accuracies = []
 
             yield iteration
 
@@ -129,7 +135,7 @@ class Train(ABC):
         sample_interval,
         d_loss,
         g_loss,
-        d_acc,
+        accuracies,
         d_fake_acc,
         d_real_acc,
         initial_sample,
@@ -138,31 +144,15 @@ class Train(ABC):
         if (iteration) % sample_interval == 0 or not initial_sample:
             # Save losses and accuracies so they can be plotted after training
             self.losses.append((d_loss, g_loss))
-            self.accuracies.append(100.0 * d_acc)
+            mean_acc = 100.0 * np.mean(accuracies)
+            self.accuracies.append(mean_acc)
             self.iteration_checkpoints.append(iteration)
-
-            num_images_seen = float(iteration * self.params.batch_size)
-            epochs = num_images_seen / dataset.shape[0]
-
-            # Output training progress
-            print(
-                "%d [D loss: %f, acc.: %.2f%%, fake: %f, real: %f] [G loss: %f] [Epochs: %f, Images seen: %d]"
-                % (
-                    iteration + 1,
-                    d_loss,
-                    100.0 * d_acc,
-                    d_fake_acc,
-                    d_real_acc,
-                    g_loss,
-                    epochs,
-                    num_images_seen,
-                )
-            )
 
             # Output a sample of generated image
             self.gan.save_weights(self.params.weight_path)
-            save_iterations(self.params.iteration_path, iteration + 1)
-            file_name = get_current_time()
+            save_iterations(self.params.iteration_path, iteration)
+            # file_name = get_current_time()
+            file_name = iteration
             show_samples(
                 self.generator,
                 self.params.latent_dim,
@@ -181,6 +171,10 @@ class Train(ABC):
                 dir=self.params.prediction_path,
                 file_name=file_name,
             )
+
+            return True
+        else:
+            return False
 
 
 class TrainBCE(Train):
