@@ -13,3 +13,9 @@ packages = [{include = "yt_data"}]
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 140
+
+[flake8]
+max-line-length = 140

@@ -2,7 +2,7 @@ from thumbs.params import HyperParams, MutableHyperParams
 from rangedict import RangeDict
 import numpy as np
 from thumbs.train import Train, load_iterations
-from thumbs.model.model import Model
+from thumbs.model.model import Model, BuiltModel
 from abc import ABC, abstractmethod
 from typing import List
 
@@ -10,22 +10,10 @@ from typing import List
 class Experiment(ABC):
     def __init__(self) -> None:
         self.params = self.get_params()
-        self.data = self.get_data()
 
-    def _init_train(self, model: Model) -> Train:
-        (
-            gan,
-            discriminator,
-            generator,
-            generator_optimizer,
-        ) = model.build()
-        return Train(
-            gan,
-            generator,
-            discriminator,
-            generator_optimizer,
-            self.params,
-        )
+    @abstractmethod
+    def get_train(self, model: BuiltModel) -> Train:
+        raise NotImplementedError()
 
     @abstractmethod
     def get_params(self) -> HyperParams:
@@ -46,15 +34,19 @@ class Experiment(ABC):
     def start(self) -> None:
         schedule = self.get_mutable_params()
         i = load_iterations(self.params.iteration_path) or 0
+        data = self.get_data()
 
         while True:
             mparams: MutableHyperParams = schedule[i]
+            if i > mparams.iterations:
+                raise Exception(f"Checkpointed at iteration {i} but only training for {mparams.iterations} iterations")
+
             print("------------------------------------------------------------")
             print(f"Training with params {mparams}, starting from iteration {i} to {mparams.iterations}")
             print("------------------------------------------------------------")
 
             model = self.get_model(mparams)
-            train = self._init_train(model)
+            train = self.get_train(model.build())
 
-            for j in train.train(self.data, mparams.iterations, mparams.sample_interval, start_iter=i):
+            for j in train.train(data, mparams.iterations, mparams.sample_interval, start_iter=i):
                 i = j

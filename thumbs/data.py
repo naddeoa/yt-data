@@ -11,7 +11,58 @@ import numpy as np
 from PIL import Image
 
 
-def get_data(
+#
+# Resize, normalize, etc
+#
+def load_and_preprocess_image(img_path, size: Tuple[int, int, int], file_type: str = 'jpg'):
+    # Open the image file
+    x, y, _ = size
+    img = Image.open(img_path)
+
+    # Resize the image
+    img = img.resize((x, y))
+
+    # Convert the image to a numpy array
+    img_array = np.array(img)
+
+    # If it's a grayscale image, convert it to RGB
+    if len(img_array.shape) == 2:
+        img_array = np.repeat(img_array[:, :, np.newaxis], 3, axis=2)
+
+    # Normalize from [0, 255] to [-1, 1]
+    img_array = (img_array.astype("float32") - 127.5) / 127.5
+    return img_array
+
+
+def get_pokemon_data(
+    size: Tuple[int, int, int] = (128, 128, 3),
+) -> np.ndarray:
+    data_dir = "/home/anthony/workspace/yt-data/pokemon"
+    print(f"Images in {data_dir}")
+    file_list = os.listdir(data_dir)
+    print(file_list[:10])
+    print(f"Found {len(file_list)} total files")
+    jpg_file_list = [ file for file in file_list if file.endswith(".jpg") or file.endswith('.jpeg') ]
+
+    print(f"Found {len(jpg_file_list)} jpgs")
+
+    jpgs = [
+        load_and_preprocess_image(f"{data_dir}/{img_path}", size)
+        for img_path in tqdm(jpg_file_list)
+    ]
+
+    images = np.array(jpgs)
+
+    if is_notebook():
+        # Make sure the preprocessing worked
+        for image in images[:2]:
+            visualize_preprocessed_image(image)
+        visualize_image_scatter(images)
+
+    return images
+
+
+def get_yt_data(
     size: Tuple[int, int, int] = (64, 64, 3),
     n: Optional[int] = None,
     min_views: int = 1_000_000,
@@ -54,34 +105,12 @@ def get_data(
     if is_notebook():
         PIL.Image.open(thumbnail_data[0][0])
 
-    #
-    # Resize, normalize, etc
-    #
-    def load_and_preprocess_image(img_path):
-        # Open the image file
-        img = Image.open(img_path)
-
-        # Resize the image
-        x, y, _ = size
-        img = img.resize((x, y))
-
-        # Convert the image to a numpy array
-        img_array = np.array(img)
-
-        # If it's a grayscale image, convert it to RGB
-        if len(img_array.shape) == 2:
-            img_array = np.repeat(img_array[:, :, np.newaxis], 3, axis=2)
-
-        # Normalize from [0, 255] to [-1, 1]
-        img_array = (img_array.astype("float32") - 127.5) / 127.5
-        return img_array
-
     if n is not None:
         data_subset = thumbnail_data[:n]
     else:
         data_subset = thumbnail_data
 
-    images = [load_and_preprocess_image(t[0]) for t in tqdm(data_subset)]
+    images = [load_and_preprocess_image(t[0], size) for t in tqdm(data_subset)]
 
     if is_notebook():
         # Make sure the preprocessing worked

@@ -1,6 +1,17 @@
 from abc import ABC, abstractmethod
+import tensorflow as tf
 from thumbs.params import HyperParams, MutableHyperParams
 from keras.optimizers import Adam
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class BuiltModel:
+    gan: tf.keras.Model
+    discriminator: tf.keras.Model
+    generator: tf.keras.Model
+    generator_optimizer: tf.keras.optimizers.Optimizer
 
 
 class Model(ABC):
@@ -20,23 +31,19 @@ class Model(ABC):
     def build_gan(self, generator, discriminator):
         raise NotImplementedError()
 
-    def build(self):
-        # Build and compile the Discriminator
+    def build(self, loss="binary_crossentropy") -> BuiltModel:
         discriminator = self.build_discriminator(self.params.img_shape)
         discriminator.compile(
-            loss="binary_crossentropy",
+            loss=loss,
             optimizer=Adam(learning_rate=self.mparams.dis_learning_rate),
             metrics=["accuracy"],
         )
 
-        # Build the Generator
         generator = self.build_generator(self.params.latent_dim)
 
-        # Keep Discriminator’s parameters constant for Generator training
         discriminator.trainable = False
-
-        # Build and compile GAN model with fixed Discriminator to train the Generator
         gan = self.build_gan(generator, discriminator)
         generator_optimizer = Adam(learning_rate=self.mparams.gen_learning_rate)
+        gan.compile(loss=loss, optimizer=generator_optimizer)
 
-        return gan, discriminator, generator, generator_optimizer
+        return BuiltModel(gan, discriminator, generator, generator_optimizer)

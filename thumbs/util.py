@@ -4,7 +4,7 @@ from datetime import datetime
 def is_notebook() -> bool:
     try:
         # Check if the 'get_ipython' function exists
-        shell = get_ipython().__class__.__name__
+        shell = get_ipython().__class__.__name__  # type: ignore
         if shell == "ZMQInteractiveShell":
             return True  # Running in a Jupyter notebook
         else:
@@ -15,7 +15,7 @@ def is_notebook() -> bool:
 
 def is_colab() -> bool:
     try:
-        import google.colab
+        import google.colab  # type: ignore
 
         return True
     except ModuleNotFoundError:
