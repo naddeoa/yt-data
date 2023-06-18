@@ -20,3 +20,6 @@ class MutableHyperParams:
     sample_interval: int # = 100
     gen_learning_rate: float # = 0.0001
     dis_learning_rate: float # = 0.00001
+    adam_b1: float # = 0.5
+    generator_turns: int = 1
+    discriminator_turns: int = 1

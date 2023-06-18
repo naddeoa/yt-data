@@ -3,9 +3,9 @@ import numpy as np
 from thumbs.model.model import BuiltModel
 from thumbs.util import get_current_time
 from thumbs.viz import show_accuracy_plot, show_loss_plot, show_samples
-from thumbs.params import HyperParams
+from thumbs.params import HyperParams, MutableHyperParams
 from thumbs.loss import Loss
-from typing import List, Optional
+from typing import Iterable, List, Optional
 from abc import ABC, abstractmethod
 
 
@@ -63,42 +63,43 @@ class Train(ABC):
     def train_generator(self, z):
         raise NotImplementedError()
 
-    def train(self, dataset, iterations, sample_interval, start_iter=0):
+    def train(self, dataset: tf.data.Dataset, mparams: MutableHyperParams, start_iter=0):
         load_weights(self.gan, self.params.weight_path)
 
         # Labels for fake images: all zeros
         initial_sample = False
 
         accuracies = []
-
-        s = tf.data.Dataset.from_tensor_slices(dataset)
-        progress = tqdm(range(start_iter, iterations), total=iterations, initial=start_iter, position=0, leave=True, desc="epoch")
+        progress = tqdm(
+            range(start_iter, mparams.iterations + 1), total=mparams.iterations, initial=start_iter, position=0, leave=True, desc="epoch"
+        )
         for iteration in progress:
-            batches = s.shuffle(buffer_size=1024).batch(self.params.batch_size, drop_remainder=True)
-            batch_progress = tqdm(batches, position=1, leave=False, desc="batch")
-            for imgs in batch_progress:
-                # Generate a batch of fake images
-                z = np.random.normal(0, 1, (self.params.batch_size, self.params.latent_dim))
-                gen_imgs = self.generator.predict(z, verbose=0)
+            # batches = dataset.shuffle(buffer_size=1024).batch(self.params.batch_size, drop_remainder=True)
+            for imgs in tqdm(dataset, position=1, leave=False, desc="batch"):
 
                 # -------------------------
                 #  Train the Discriminator
                 # -------------------------
-                (
-                    d_loss,
-                    d_loss_fake,
-                    d_loss_real,
-                    d_acc,
-                    d_fake_acc,
-                    d_real_acc,
-                ) = self.train_discriminator(gen_imgs, imgs)
+                # Generate a batch of fake images
+                for _ in range(mparams.discriminator_turns):
+                    z = np.random.normal(0, 1, (self.params.batch_size, self.params.latent_dim))
+                    gen_imgs = self.generator.predict(z, verbose=0)
+                    (
+                        d_loss,
+                        d_loss_fake,
+                        d_loss_real,
+                        d_acc,
+                        d_fake_acc,
+                        d_real_acc,
+                    ) = self.train_discriminator(gen_imgs, imgs)
 
                 # ---------------------
                 #  Train the Generator
                 # ---------------------
-                z = np.random.normal(0, 1, (self.params.batch_size, self.params.latent_dim))
-                gen_imgs = self.generator.predict(z, verbose=0)
-                g_loss = self.train_generator(z)
+                # gen_imgs = self.generator.predict(z, verbose=0)
+                for _ in range(mparams.generator_turns):
+                    z = np.random.normal(0, 1, (self.params.batch_size, self.params.latent_dim))
+                    g_loss = self.train_generator(z)
 
                 progress.set_postfix(
                     {
@@ -114,7 +115,7 @@ class Train(ABC):
 
             updated = self.save_sample(
                 iteration=iteration,
-                sample_interval=sample_interval,
+                sample_interval=mparams.sample_interval,
                 initial_sample=initial_sample,
                 dataset=dataset,
                 d_loss=d_loss,

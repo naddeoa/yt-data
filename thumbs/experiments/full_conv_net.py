@@ -142,6 +142,7 @@ class FullConvTrainingExperiment(Experiment):
         phase1 = MutableHyperParams(
             gen_learning_rate=0.0001,
             dis_learning_rate=0.00001,
+            adam_b1=0.9,
             iterations=2000,
             sample_interval=100,
         )
@@ -150,6 +151,7 @@ class FullConvTrainingExperiment(Experiment):
         phase2 = MutableHyperParams(
             gen_learning_rate=0.0001,
             dis_learning_rate=0.0001,
+            adam_b1=0.9,
             iterations=5300,
             sample_interval=100,
         )
@@ -158,6 +160,7 @@ class FullConvTrainingExperiment(Experiment):
         phase3 = MutableHyperParams(
             gen_learning_rate=0.0001,
             dis_learning_rate=0.00005,
+            adam_b1=0.9,
             iterations=2000,
             sample_interval=100,
         )
@@ -166,6 +169,7 @@ class FullConvTrainingExperiment(Experiment):
         phase4 = MutableHyperParams(
             gen_learning_rate=0.0001,
             dis_learning_rate=0.000075,
+            adam_b1=0.9,
             iterations=200000,
             sample_interval=100,
         )

@@ -128,17 +128,24 @@ def visualize_image_scatter(images):
 
 
 def process_prediction_image(image):
-    # Scale the image from [-1, 1] to [0, 1]
-    image = (image + 1) / 2
-    # Clip values to [0, 1] in case of any numerical instability
-    image = tf.clip_by_value(image, 0, 1)
-    # Convert the image tensor to a NumPy array
-    return image.numpy()
+    # # Scale the image from [-1, 1] to [0, 1]
+    # image = (image + 1) / 2
+    # # Clip values to [0, 1] in case of any numerical instability
+    # image = tf.clip_by_value(image, 0, 1)
+    # # Convert the image tensor to a NumPy array
+    # return image.numpy()
+
+    # This scales it back up to the range [0, 255]. It looks a little different
+    # rendered from here than it does from -1,1
+    image = (image + 1) * 127.5
+    return image.astype(np.uint8)
 
 
-def visualize_preprocessed_image(image):
+def visualize_preprocessed_image(image, size=None):
     image = process_prediction_image(image)
 
+    if size is not None:
+        plt.figure(figsize=size)  # Set the figure size to be 10 inches wide and 5 inches tall
     # Display the image
     plt.imshow(image)
     plt.axis('off')
@@ -175,16 +182,13 @@ def visualize_thumbnails(image_list, rows, cols, dir, file_name):
         # Ensure predictions exists
         if not os.path.exists(dir):
             os.mkdir(dir)
-        plt.savefig(f'{dir}/_latest.jpg')
-        plt.savefig(f'{dir}/thumbnail-{file_name}.jpg')
+        plt.savefig(f'{dir}/_latest.jpg', bbox_inches='tight')
+        plt.savefig(f'{dir}/thumbnail-{file_name}.jpg', bbox_inches='tight')
         plt.close()
 
-def show_samples(generator, latent_dim, file_name, dir: str, rows=1, cols=10, dataset=None):
+
+def show_samples(generator, latent_dim, file_name, dir: str, rows=6, cols=6, dataset=None):
     # noise = np.random.uniform(-1, 1, size=(rows * cols, latent_dim))
     noise = np.random.normal(0, 1, (rows * cols, latent_dim))
     generated_thumbnails = generator.predict(noise, verbose=0)
     visualize_thumbnails(generated_thumbnails, rows, cols, dir, file_name)
-
-    # if dataset is not None:
-    #     # generated = [generator.predict(tf.random.normal([1, latent_dim])) for i in range(100)]
-    #     compare_scatters(dataset, generated_thumbnails)

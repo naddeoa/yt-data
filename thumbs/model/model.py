@@ -35,7 +35,7 @@ class Model(ABC):
         discriminator = self.build_discriminator(self.params.img_shape)
         discriminator.compile(
             loss=loss,
-            optimizer=Adam(learning_rate=self.mparams.dis_learning_rate),
+            optimizer=Adam(learning_rate=self.mparams.dis_learning_rate, beta_1=self.mparams.adam_b1),
             metrics=["accuracy"],
         )
 
@@ -43,7 +43,7 @@ class Model(ABC):
 
         discriminator.trainable = False
         gan = self.build_gan(generator, discriminator)
-        generator_optimizer = Adam(learning_rate=self.mparams.gen_learning_rate)
+        generator_optimizer = Adam(learning_rate=self.mparams.gen_learning_rate, beta_1=self.mparams.adam_b1)
         gan.compile(loss=loss, optimizer=generator_optimizer)
 
         return BuiltModel(gan, discriminator, generator, generator_optimizer)
