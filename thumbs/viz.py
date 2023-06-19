@@ -12,12 +12,15 @@ from thumbs.util import is_notebook, get_current_time
 from datetime import datetime
 
 
-def show_accuracy_plot(accuracies, iteration_checkpoints, dir: str, file_name: str) -> None:
-    accuracies_np = np.array(accuracies)
+def show_accuracy_plot(accuracies_rf, iteration_checkpoints, dir: str, file_name: str) -> None:
+    accuracies_np = np.asarray(accuracies_rf)
+    accuracies_real = accuracies_np.T[0]
+    accuracies_fake = accuracies_np.T[1]
 
     # Plot Discriminator accuracy
     plt.figure(figsize=(10, 2))
-    plt.plot(iteration_checkpoints, accuracies_np, label="Discriminator accuracy")
+    plt.plot(iteration_checkpoints, accuracies_fake, label="Fake accuracy")
+    plt.plot(iteration_checkpoints, accuracies_real, label="Real accuracy")
 
     plt.xticks(iteration_checkpoints, rotation=90)
     plt.yticks(range(0, 100, 5))
@@ -26,9 +29,9 @@ def show_accuracy_plot(accuracies, iteration_checkpoints, dir: str, file_name: s
     plt.xlabel("Iteration")
     plt.ylabel("Accuracy (%)")
     plt.legend()
-    i = len(accuracies) -1
-    plt.annotate(text=f'{round(accuracies[-1])}', xy=(iteration_checkpoints[i], accuracies[i]))
-    # plt.close()
+
+    plt.annotate(text=f'{round(accuracies_fake[-1])}', xy=(iteration_checkpoints[-1], accuracies_fake[-1]))
+    plt.annotate(text=f'{round(accuracies_real[-1])}', xy=(iteration_checkpoints[-1], accuracies_real[-1]))
 
     if is_notebook():
         plt.show()

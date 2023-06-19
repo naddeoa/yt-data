@@ -78,14 +78,17 @@ class Experiment(ABC):
     def start(self) -> None:
         schedule = self.get_mutable_params()
         i = load_iterations(self.params.iteration_path) or 0
-        i += 1
         dataset = tf.data.Dataset.from_tensor_slices(self.get_data())
 
         while True:
-            mparams: MutableHyperParams = schedule[i]
-            if i >= mparams.iterations:
+            try:
+                mparams: MutableHyperParams = schedule[i+1]
+            except KeyError:
                 print(f"Checkpointed at iteration {i} but only training for {mparams.iterations} iterations")
                 os._exit(0)
+
+            if i >= mparams.iterations:
+                continue
 
             print("------------------------------------------------------------")
             print(f"Training with params {mparams}, starting from iteration {i} to {mparams.iterations}")
@@ -97,4 +100,3 @@ class Experiment(ABC):
             for j in train.train(self.prepare_data(dataset), mparams, start_iter=i):
                 i = j
 
-            i += 1

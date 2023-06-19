@@ -5,8 +5,10 @@ from thumbs.util import get_current_time
 from thumbs.viz import show_accuracy_plot, show_loss_plot, show_samples
 from thumbs.params import HyperParams, MutableHyperParams
 from thumbs.loss import Loss
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Tuple
 from abc import ABC, abstractmethod
+import pathlib
+import os
 
 
 from tqdm import tqdm
@@ -30,8 +32,13 @@ def load_iterations(iteration_path: str) -> Optional[int]:
 
 
 def save_iterations(iteration_path: str, iterations: int):
+    pathlib.Path(os.path.dirname(iteration_path)).mkdir(parents=True, exist_ok=True)
     with open(iteration_path, "w") as f:
         f.write(str(iterations))
+
+def save_model(gan: tf.keras.Model, weight_path: str, iterations: int):
+    pathlib.Path(weight_path).mkdir(parents=True, exist_ok=True)
+    gan.save_weights(weight_path)
 
 
 def load_weights(gan, weight_path: str):
@@ -51,8 +58,9 @@ class Train(ABC):
         self.params = params
         self.loss = Loss(params)
 
-        self.losses: List[float] = []
+        self.losses: List[Tuple[float, float]] = []
         self.accuracies: List[float] = []
+        self.accuracies_rf: List[Tuple[float, float]] = []
         self.iteration_checkpoints: List[int] = []
 
     @abstractmethod
@@ -70,6 +78,7 @@ class Train(ABC):
         initial_sample = False
 
         accuracies = []
+        accuracies_rf = []
         progress = tqdm(
             range(start_iter, mparams.iterations + 1), total=mparams.iterations, initial=start_iter, position=0, leave=True, desc="epoch"
         )
@@ -112,17 +121,16 @@ class Train(ABC):
                 )
 
                 accuracies.append(d_acc)
+                accuracies_rf.append((d_real_acc, d_fake_acc))
 
             updated = self.save_sample(
                 iteration=iteration,
-                sample_interval=mparams.sample_interval,
                 initial_sample=initial_sample,
-                dataset=dataset,
                 d_loss=d_loss,
                 g_loss=g_loss,
                 accuracies=accuracies,
-                d_fake_acc=d_fake_acc,
-                d_real_acc=d_real_acc,
+                accuracies_rf=accuracies_rf,
+                mparams=mparams,
             )
             if updated:
                 initial_sample = True
@@ -133,26 +141,29 @@ class Train(ABC):
     def save_sample(
         self,
         iteration,
-        sample_interval,
         d_loss,
         g_loss,
         accuracies,
-        d_fake_acc,
-        d_real_acc,
+        accuracies_rf,
         initial_sample,
-        dataset,
+        mparams: MutableHyperParams,
     ):
+        sample_interval = mparams.sample_interval
+        checkpoint_path = self.params.checkpoint_path
+        checkpoint_interval = mparams.checkpoint_interval
+
+        if checkpoint_path is not None and checkpoint_interval is not None and (iteration) % checkpoint_interval == 0 :
+            save_iterations(f'{checkpoint_path}/{iteration}/iteration', iteration)
+            self.gan.save_weights(f'{checkpoint_path}/{iteration}/weights')
+
         if (iteration) % sample_interval == 0 or not initial_sample:
             # Save losses and accuracies so they can be plotted after training
             self.losses.append((d_loss, g_loss))
             mean_acc = 100.0 * np.mean(accuracies)
             self.accuracies.append(mean_acc)
+            self.accuracies_rf.append(100.0 * np.mean(accuracies_rf, axis=0))
             self.iteration_checkpoints.append(iteration)
 
-            # Output a sample of generated image
-            self.gan.save_weights(self.params.weight_path)
-            save_iterations(self.params.iteration_path, iteration)
-            # file_name = get_current_time()
             file_name = iteration
             show_samples(
                 self.generator,
@@ -167,11 +178,13 @@ class Train(ABC):
                 file_name=file_name,
             )
             show_accuracy_plot(
-                self.accuracies,
+                self.accuracies_rf,
                 self.iteration_checkpoints,
                 dir=self.params.prediction_path,
                 file_name=file_name,
             )
+            self.gan.save_weights(self.params.weight_path)
+            save_iterations(self.params.iteration_path, iteration)
 
             return True
         else:
