@@ -36,6 +36,7 @@ def save_iterations(iteration_path: str, iterations: int):
     with open(iteration_path, "w") as f:
         f.write(str(iterations))
 
+
 def save_model(gan: tf.keras.Model, weight_path: str, iterations: int):
     pathlib.Path(weight_path).mkdir(parents=True, exist_ok=True)
     gan.save_weights(weight_path)
@@ -77,15 +78,14 @@ class Train(ABC):
         # Labels for fake images: all zeros
         initial_sample = False
 
-        accuracies = []
         accuracies_rf = []
+        loss_dg: List[Tuple[float, float]] = []
         progress = tqdm(
             range(start_iter, mparams.iterations + 1), total=mparams.iterations, initial=start_iter, position=0, leave=True, desc="epoch"
         )
         for iteration in progress:
             # batches = dataset.shuffle(buffer_size=1024).batch(self.params.batch_size, drop_remainder=True)
             for imgs in tqdm(dataset, position=1, leave=False, desc="batch"):
-
                 # -------------------------
                 #  Train the Discriminator
                 # -------------------------
@@ -120,51 +120,45 @@ class Train(ABC):
                     }
                 )
 
-                accuracies.append(d_acc)
+                # accuracies.append(d_acc)
                 accuracies_rf.append((d_real_acc, d_fake_acc))
+                loss_dg.append((d_loss, g_loss))
 
             updated = self.save_sample(
                 iteration=iteration,
                 initial_sample=initial_sample,
-                d_loss=d_loss,
-                g_loss=g_loss,
-                accuracies=accuracies,
+                loss_dg=loss_dg,
                 accuracies_rf=accuracies_rf,
                 mparams=mparams,
             )
             if updated:
                 initial_sample = True
-                accuracies = []
 
             yield iteration
 
     def save_sample(
         self,
-        iteration,
-        d_loss,
-        g_loss,
-        accuracies,
-        accuracies_rf,
-        initial_sample,
+        iteration: int,
+        loss_dg: List[Tuple[float, float]],
+        accuracies_rf: List[Tuple[float, float]],
+        initial_sample: bool,
         mparams: MutableHyperParams,
-    ):
+    ) -> bool:
         sample_interval = mparams.sample_interval
         checkpoint_path = self.params.checkpoint_path
         checkpoint_interval = mparams.checkpoint_interval
 
-        if checkpoint_path is not None and checkpoint_interval is not None and (iteration) % checkpoint_interval == 0 :
-            save_iterations(f'{checkpoint_path}/{iteration}/iteration', iteration)
-            self.gan.save_weights(f'{checkpoint_path}/{iteration}/weights')
+        if checkpoint_path is not None and checkpoint_interval is not None and (iteration) % checkpoint_interval == 0:
+            save_iterations(f"{checkpoint_path}/{iteration}/iteration", iteration)
+            self.gan.save_weights(f"{checkpoint_path}/{iteration}/weights")
 
         if (iteration) % sample_interval == 0 or not initial_sample:
             # Save losses and accuracies so they can be plotted after training
-            self.losses.append((d_loss, g_loss))
-            mean_acc = 100.0 * np.mean(accuracies)
-            self.accuracies.append(mean_acc)
+            self.losses.append(np.mean(loss_dg, axis=0))
             self.accuracies_rf.append(100.0 * np.mean(accuracies_rf, axis=0))
             self.iteration_checkpoints.append(iteration)
 
-            file_name = iteration
+            file_name = str(iteration)
             show_samples(
                 self.generator,
                 self.params.latent_dim,

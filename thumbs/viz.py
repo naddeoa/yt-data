@@ -30,27 +30,30 @@ def show_accuracy_plot(accuracies_rf, iteration_checkpoints, dir: str, file_name
     plt.ylabel("Accuracy (%)")
     plt.legend()
 
-    plt.annotate(text=f'{round(accuracies_fake[-1])}', xy=(iteration_checkpoints[-1], accuracies_fake[-1]))
-    plt.annotate(text=f'{round(accuracies_real[-1])}', xy=(iteration_checkpoints[-1], accuracies_real[-1]))
+    plt.annotate(text=f"{round(accuracies_fake[-1])}", xy=(iteration_checkpoints[-1], accuracies_fake[-1]))
+    plt.annotate(text=f"{round(accuracies_real[-1])}", xy=(iteration_checkpoints[-1], accuracies_real[-1]))
 
     if is_notebook():
         plt.show()
         plt.clf()
     else:
         # Ensure predictions exists
-        if not os.path.exists(f'{dir}'):
-            os.mkdir(f'{dir}')
-        plt.savefig(f'{dir}/_latest-acc.jpg')
-        plt.savefig(f'{dir}/acc-{file_name}.jpg')
+        if not os.path.exists(f"{dir}"):
+            os.mkdir(f"{dir}")
+        plt.savefig(f"{dir}/_latest-acc.jpg")
+        plt.savefig(f"{dir}/acc-{file_name}.jpg")
         plt.close()
 
+
 def show_loss_plot(losses, iteration_checkpoints, dir: str, file_name: str) -> None:
-    losses_np = np.array(losses)
+    losses_np = np.asarray(losses)
+    disc_loss = losses_np.T[0]
+    gen_loss = losses_np.T[1]
 
     # Plot training losses for Discriminator and Generator
     plt.figure(figsize=(10, 2))
-    plt.plot(iteration_checkpoints, losses_np.T[0], label="Discriminator loss")
-    plt.plot(iteration_checkpoints, losses_np.T[1], label="Generator loss")
+    plt.plot(iteration_checkpoints, disc_loss, label="Discriminator loss")
+    plt.plot(iteration_checkpoints, gen_loss, label="Generator loss")
 
     plt.xticks(iteration_checkpoints, rotation=90)
 
@@ -58,15 +61,19 @@ def show_loss_plot(losses, iteration_checkpoints, dir: str, file_name: str) -> N
     plt.xlabel("Iteration")
     plt.ylabel("Loss")
     plt.legend()
+
+    plt.annotate(text=f"{disc_loss[-1]}", xy=(iteration_checkpoints[-1], disc_loss[-1]))
+    plt.annotate(text=f"{gen_loss[-1]}", xy=(iteration_checkpoints[-1], gen_loss[-1]))
+
     if is_notebook():
         plt.show()
         plt.clf()
     else:
         # Ensure predictions exists
-        if not os.path.exists(f'{dir}'):
-            os.mkdir(f'{dir}')
-        plt.savefig(f'{dir}/_latest-loss.jpg')
-        plt.savefig(f'{dir}/loss-{file_name}.jpg')
+        if not os.path.exists(f"{dir}"):
+            os.mkdir(f"{dir}")
+        plt.savefig(f"{dir}/_latest-loss.jpg")
+        plt.savefig(f"{dir}/loss-{file_name}.jpg")
         plt.close()
 
 
@@ -75,12 +82,13 @@ def visualize_image_distribution(images):
     all_pixels = np.array(images).flatten()
 
     # Plot a histogram for the pixel values
-    plt.hist(all_pixels, bins=256, color='gray', alpha=0.7)
-    plt.title('Pixel Intensity Distribution')
-    plt.xlabel('Pixel Intensity')
-    plt.ylabel('Frequency')
+    plt.hist(all_pixels, bins=256, color="gray", alpha=0.7)
+    plt.title("Pixel Intensity Distribution")
+    plt.xlabel("Pixel Intensity")
+    plt.ylabel("Frequency")
     plt.show()
     plt.close()
+
 
 def visualize_image_scatter(images):
     # Flatten each image into a 1D array
@@ -92,7 +100,7 @@ def visualize_image_scatter(images):
 
     # Plot the reduced data as a scatter plot
     plt.scatter(reduced_data[:, 0], reduced_data[:, 1])
-    plt.title('PCA Scatter Plot')
+    plt.title("PCA Scatter Plot")
     plt.show()
     plt.close()
 
@@ -151,7 +159,7 @@ def visualize_preprocessed_image(image, size=None):
         plt.figure(figsize=size)  # Set the figure size to be 10 inches wide and 5 inches tall
     # Display the image
     plt.imshow(image)
-    plt.axis('off')
+    plt.axis("off")
     plt.show()
     plt.close()
 
@@ -169,10 +177,10 @@ def visualize_thumbnails(image_list, rows, cols, dir, file_name):
             image = process_prediction_image(image_list.pop())
             if rows == 1:
                 axs[col].imshow(image)
-                axs[col].axis('off')
+                axs[col].axis("off")
             else:
                 axs[row, col].imshow(image)
-                axs[row, col].axis('off')
+                axs[row, col].axis("off")
 
     plt.subplots_adjust(wspace=0.0, hspace=0)
     plt.tight_layout()
@@ -185,8 +193,8 @@ def visualize_thumbnails(image_list, rows, cols, dir, file_name):
         # Ensure predictions exists
         if not os.path.exists(dir):
             os.mkdir(dir)
-        plt.savefig(f'{dir}/_latest.jpg', bbox_inches='tight')
-        plt.savefig(f'{dir}/thumbnail-{file_name}.jpg', bbox_inches='tight')
+        plt.savefig(f"{dir}/_latest.jpg", bbox_inches="tight")
+        plt.savefig(f"{dir}/thumbnail-{file_name}.jpg", bbox_inches="tight")
         plt.close()
 
 
