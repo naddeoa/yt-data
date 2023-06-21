@@ -1,4 +1,5 @@
 import thumbs.config_logging  # must be first
+import os
 from typing import List, Tuple, Iterator
 from rangedict import RangeDict
 import numpy as np
@@ -131,13 +132,20 @@ class PokemonExperiment(Experiment):
 
     def get_params(self) -> HyperParams:
         name = "pokemon_deep_32"
+
+        exp_dir = 'EXP_DIR'
+        if exp_dir in os.environ:
+            base_dir = os.environ['EXP_DIR']
+        else:
+            base_dir = '/mnt/e/experiments/'
+
         return HyperParams(
             latent_dim=100,
             img_shape=(128, 128, 3),
-            weight_path=f"/mnt/e/experiments/{name}/weights",
-            checkpoint_path=f"/mnt/e/experiments/{name}/checkpoints",
-            prediction_path=f"/mnt/e/experiments/{name}/predictions",
-            iteration_path=f"/mnt/e/experiments/{name}/iteration",
+            weight_path=f"{exp_dir}/{name}/weights",
+            checkpoint_path=f"{exp_dir}/{name}/checkpoints",
+            prediction_path=f"{exp_dir}/{name}/predictions",
+            iteration_path=f"{exp_dir}/{name}/iteration",
             similarity_threshold=0.0,
             similarity_penalty=20,
         )
