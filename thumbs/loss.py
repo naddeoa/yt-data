@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow import reduce_mean
 from thumbs.params import HyperParams
 
 
@@ -11,6 +12,9 @@ class Loss:
             0.0,
             self.params.similarity_penalty * (self.params.similarity_threshold - similarity_score),
         )
+
+    def wasserstein_loss(self, y_true, y_pred):
+        return reduce_mean(y_true * y_pred)
 
     # @tf.function
     def worst_cosine_similarity(self, images):

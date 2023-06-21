@@ -5,6 +5,7 @@ from rangedict import RangeDict
 import numpy as np
 
 from thumbs.experiment import Experiment
+from thumbs.loss import Loss
 from thumbs.data import get_pokemon_data
 from thumbs.params import HyperParams, MutableHyperParams
 from thumbs.model.model import Model, BuiltModel
@@ -30,7 +31,7 @@ from keras.layers import (
 from tensorflow.compat.v1.keras.layers import BatchNormalization as BatchNormalizationV1
 from keras.layers.convolutional import Conv2D, Conv2DTranspose
 
-from thumbs.train import Train, TrainMSE, TrainBCE, TrainBCESimilarity
+from thumbs.train import Train, TrainMSE, TrainBCE, TrainBCESimilarity, TrainWassersteinGP
 
 
 infinity = float("inf")
@@ -97,7 +98,8 @@ class PokemonModel(Model):
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Flatten())
-        model.add(Dense(1, activation="sigmoid"))
+        # model.add(Dense(1, activation="sigmoid"))
+        model.add(Dense(1))
 
         model.summary(line_length=200)
         return model
@@ -112,14 +114,14 @@ class PokemonExperiment(Experiment):
         return get_pokemon_data(self.params.img_shape)
 
     def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
-        return TrainBCE(model, self.params, mparams)
+        return TrainWassersteinGP(model, self.params, mparams)
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
         schedule[0, 10000] = MutableHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
-            batch_size=32,
+            batch_size=128,
             adam_b1=0.5,
             iterations=10000,
             sample_interval=10,
@@ -131,7 +133,7 @@ class PokemonExperiment(Experiment):
         return schedule
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_deep_32"
+        name = "pokemon_wgan"
 
         exp_dir = 'EXP_DIR'
         if exp_dir in os.environ:
@@ -151,7 +153,7 @@ class PokemonExperiment(Experiment):
         )
 
     def get_model(self, mparams: MutableHyperParams) -> Model:
-        return PokemonModel(self.params, mparams)
+        return PokemonModel(self.params, mparams, Loss(self.get_params()).wasserstein_loss)
 
 
 if __name__ == "__main__":

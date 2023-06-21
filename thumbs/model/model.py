@@ -15,9 +15,10 @@ class BuiltModel:
 
 
 class Model(ABC):
-    def __init__(self, params: HyperParams, mparams: MutableHyperParams) -> None:
+    def __init__(self, params: HyperParams, mparams: MutableHyperParams, loss="binary_crossentropy") -> None:
         self.params = params
         self.mparams = mparams
+        self.loss = loss
 
     @abstractmethod
     def build_discriminator(self, img_shape):
@@ -31,10 +32,10 @@ class Model(ABC):
     def build_gan(self, generator, discriminator):
         raise NotImplementedError()
 
-    def build(self, loss="binary_crossentropy") -> BuiltModel:
+    def build(self) -> BuiltModel:
         discriminator = self.build_discriminator(self.params.img_shape)
         discriminator.compile(
-            loss=loss,
+            loss=self.loss,
             optimizer=Adam(learning_rate=self.mparams.dis_learning_rate, beta_1=self.mparams.adam_b1),
             metrics=["accuracy"],
         )
@@ -44,6 +45,6 @@ class Model(ABC):
         discriminator.trainable = False
         gan = self.build_gan(generator, discriminator)
         generator_optimizer = Adam(learning_rate=self.mparams.gen_learning_rate, beta_1=self.mparams.adam_b1)
-        gan.compile(loss=loss, optimizer=generator_optimizer)
+        gan.compile(loss=self.loss, optimizer=generator_optimizer)
 
         return BuiltModel(gan, discriminator, generator, generator_optimizer)

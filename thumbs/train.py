@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.keras import backend as K
 import numpy as np
 from thumbs.model.model import BuiltModel
 from thumbs.util import get_current_time
@@ -111,6 +112,9 @@ class Train(ABC):
                     z = np.random.normal(0, 1, (self.mparams.batch_size, self.params.latent_dim))
                     g_loss = self.train_generator(z)
 
+                print()
+                tf.print(d_loss)
+                print()
                 progress.set_postfix(
                     {
                         "d_loss": trunc(d_loss),
@@ -182,6 +186,53 @@ class Train(ABC):
             return True
         else:
             return False
+
+
+class TrainWassersteinGP(Train):
+    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams) -> None:
+        super().__init__(built_model, params, mparams)
+        self.loss = Loss(params)
+
+    def gradient_penalty(self, real_imgs, gen_imgs):
+        # batch_size = real_imgs.shape[0]
+        alpha = np.random.normal(0., 1., (self.mparams.batch_size, 1, 1, 1))
+        interpolated_imgs = alpha * real_imgs + (1 - alpha) * gen_imgs
+        interpolated_imgs = tf.Variable(interpolated_imgs, dtype=tf.float32)
+
+        with tf.GradientTape() as tape:
+            tape.watch(interpolated_imgs)
+            pred = self.discriminator(interpolated_imgs)
+
+        grads = tape.gradient(pred, interpolated_imgs)
+        norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3]))
+        gp = tf.reduce_mean((norm - 1.)**2)
+
+        return gp
+
+    def train_discriminator(self, gen_imgs, real_imgs):
+        batch_size = self.mparams.batch_size
+        real = -np.ones((batch_size, 1))
+        fake = np.ones((batch_size, 1))
+
+        d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_imgs, real)
+        d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(gen_imgs, fake)
+        d_acc = 0.5 * np.add(d_real_acc, d_fake_acc)
+        gp = self.gradient_penalty(real_imgs, gen_imgs)
+
+        d_loss = 0.5 * np.add(d_loss_real, d_loss_fake) + 10 * gp
+        # return d_loss, 0, 0, 0, 0, 0
+        return d_loss, d_loss_fake, d_loss_real, d_acc, d_fake_acc, d_real_acc
+
+    def train_generator(self, z):
+        valid = -np.ones((self.mparams.batch_size, 1))
+        g_loss = self.gan.train_on_batch(z, valid)
+        return g_loss
+
+
+
+
+
+
 
 
 class TrainBCE(Train):
