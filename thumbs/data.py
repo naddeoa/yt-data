@@ -1,7 +1,7 @@
 import json
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import PIL
 from typing import List, Tuple, Optional
 import os
