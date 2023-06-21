@@ -142,10 +142,10 @@ class PokemonExperiment(Experiment):
         return HyperParams(
             latent_dim=100,
             img_shape=(128, 128, 3),
-            weight_path=f"{exp_dir}/{name}/weights",
-            checkpoint_path=f"{exp_dir}/{name}/checkpoints",
-            prediction_path=f"{exp_dir}/{name}/predictions",
-            iteration_path=f"{exp_dir}/{name}/iteration",
+            weight_path=f"{base_dir}/{name}/weights",
+            checkpoint_path=f"{base_dir}/{name}/checkpoints",
+            prediction_path=f"{base_dir}/{name}/predictions",
+            iteration_path=f"{base_dir}/{name}/iteration",
             similarity_threshold=0.0,
             similarity_penalty=20,
         )
