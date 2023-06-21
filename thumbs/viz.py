@@ -33,16 +33,12 @@ def show_accuracy_plot(accuracies_rf, iteration_checkpoints, dir: str, file_name
     plt.annotate(text=f"{round(accuracies_fake[-1])}", xy=(iteration_checkpoints[-1], accuracies_fake[-1]))
     plt.annotate(text=f"{round(accuracies_real[-1])}", xy=(iteration_checkpoints[-1], accuracies_real[-1]))
 
-    if is_notebook():
-        plt.show()
-        plt.clf()
-    else:
-        # Ensure predictions exists
-        if not os.path.exists(f"{dir}"):
-            os.mkdir(f"{dir}")
-        plt.savefig(f"{dir}/_latest-acc.jpg")
-        plt.savefig(f"{dir}/acc-{file_name}.jpg")
-        plt.close()
+    # Ensure predictions exists
+    if not os.path.exists(f"{dir}"):
+        os.mkdir(f"{dir}")
+    plt.savefig(f"{dir}/_latest-acc.jpg")
+    plt.savefig(f"{dir}/acc-{file_name}.jpg")
+    plt.close()
 
 
 def show_loss_plot(losses, iteration_checkpoints, dir: str, file_name: str) -> None:
@@ -65,16 +61,12 @@ def show_loss_plot(losses, iteration_checkpoints, dir: str, file_name: str) -> N
     plt.annotate(text=f"{disc_loss[-1]}", xy=(iteration_checkpoints[-1], disc_loss[-1]))
     plt.annotate(text=f"{gen_loss[-1]}", xy=(iteration_checkpoints[-1], gen_loss[-1]))
 
-    if is_notebook():
-        plt.show()
-        plt.clf()
-    else:
-        # Ensure predictions exists
-        if not os.path.exists(f"{dir}"):
-            os.mkdir(f"{dir}")
-        plt.savefig(f"{dir}/_latest-loss.jpg")
-        plt.savefig(f"{dir}/loss-{file_name}.jpg")
-        plt.close()
+    # Ensure predictions exists
+    if not os.path.exists(f"{dir}"):
+        os.mkdir(f"{dir}")
+    plt.savefig(f"{dir}/_latest-loss.jpg")
+    plt.savefig(f"{dir}/loss-{file_name}.jpg")
+    plt.close()
 
 
 def visualize_image_distribution(images):
@@ -186,16 +178,12 @@ def visualize_thumbnails(image_list, rows, cols, dir, file_name):
     plt.tight_layout()
 
     # Show the plot
-    if is_notebook():
-        plt.show()
-        plt.close()
-    else:
-        # Ensure predictions exists
-        if not os.path.exists(dir):
-            os.mkdir(dir)
-        plt.savefig(f"{dir}/_latest.jpg", bbox_inches="tight")
-        plt.savefig(f"{dir}/thumbnail-{file_name}.jpg", bbox_inches="tight")
-        plt.close()
+    # Ensure predictions exists
+    if not os.path.exists(dir):
+        os.mkdir(dir)
+    plt.savefig(f"{dir}/_latest.jpg", bbox_inches="tight")
+    plt.savefig(f"{dir}/thumbnail-{file_name}.jpg", bbox_inches="tight")
+    plt.close()
 
 
 def show_samples(generator, latent_dim, file_name, dir: str, rows=6, cols=6, dataset=None):
