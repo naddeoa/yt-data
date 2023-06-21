@@ -15,7 +15,7 @@ class Experiment(ABC):
         self.params = self.get_params()
 
     @abstractmethod
-    def get_train(self, model: BuiltModel) -> Train:
+    def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
         raise NotImplementedError()
 
     @abstractmethod
@@ -67,15 +67,17 @@ class Experiment(ABC):
         image = tf.image.resize(image, [x, y])
         return image
 
-    def prepare_data(self, dataset: tf.data.Dataset) -> tf.data.Dataset:
+    def prepare_data(self, dataset: tf.data.Dataset, mparams: MutableHyperParams) -> tf.data.Dataset:
         return (
             dataset.shuffle(buffer_size=1000)
             .map(self._custom_agumentation)
-            .batch(self.params.batch_size, drop_remainder=True)
+            .batch(mparams.batch_size, drop_remainder=True)
             .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
         )
 
     def start(self) -> None:
+        print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+        print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
         schedule = self.get_mutable_params()
         i = load_iterations(self.params.iteration_path) or 0
         dataset = tf.data.Dataset.from_tensor_slices(self.get_data())
@@ -83,6 +85,7 @@ class Experiment(ABC):
         while True:
             try:
                 mparams: MutableHyperParams = schedule[i+1]
+                print(mparams)
             except KeyError:
                 print(f"Checkpointed at iteration {i} but only training for {mparams.iterations} iterations")
                 os._exit(0)
@@ -95,8 +98,8 @@ class Experiment(ABC):
             print("------------------------------------------------------------")
 
             model = self.get_model(mparams)
-            train = self.get_train(model.build())
+            train = self.get_train(model.build(), mparams)
 
-            for j in train.train(self.prepare_data(dataset), mparams, start_iter=i):
+            for j in train.train(self.prepare_data(dataset, mparams), start_iter=i):
                 i = j
 

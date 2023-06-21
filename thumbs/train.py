@@ -51,8 +51,9 @@ def load_weights(gan, weight_path: str):
 
 
 class Train(ABC):
-    def __init__(self, built_model: BuiltModel, params: HyperParams) -> None:
+    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams) -> None:
         self.gan = built_model.gan
+        self.mparams = mparams
         self.generator = built_model.generator
         self.discriminator = built_model.discriminator
         self.generator_optimizer = built_model.generator_optimizer
@@ -72,7 +73,7 @@ class Train(ABC):
     def train_generator(self, z):
         raise NotImplementedError()
 
-    def train(self, dataset: tf.data.Dataset, mparams: MutableHyperParams, start_iter=0):
+    def train(self, dataset: tf.data.Dataset, start_iter=0):
         load_weights(self.gan, self.params.weight_path)
 
         # Labels for fake images: all zeros
@@ -81,7 +82,7 @@ class Train(ABC):
         accuracies_rf = []
         loss_dg: List[Tuple[float, float]] = []
         progress = tqdm(
-            range(start_iter, mparams.iterations + 1), total=mparams.iterations, initial=start_iter, position=0, leave=True, desc="epoch"
+            range(start_iter, self.mparams.iterations + 1), total=self.mparams.iterations, initial=start_iter, position=0, leave=True, desc="epoch"
         )
         for iteration in progress:
             # batches = dataset.shuffle(buffer_size=1024).batch(self.params.batch_size, drop_remainder=True)
@@ -90,8 +91,8 @@ class Train(ABC):
                 #  Train the Discriminator
                 # -------------------------
                 # Generate a batch of fake images
-                for _ in range(mparams.discriminator_turns):
-                    z = np.random.normal(0, 1, (self.params.batch_size, self.params.latent_dim))
+                for _ in range(self.mparams.discriminator_turns):
+                    z = np.random.normal(0, 1, (self.mparams.batch_size, self.params.latent_dim))
                     gen_imgs = self.generator.predict(z, verbose=0)
                     (
                         d_loss,
@@ -106,8 +107,8 @@ class Train(ABC):
                 #  Train the Generator
                 # ---------------------
                 # gen_imgs = self.generator.predict(z, verbose=0)
-                for _ in range(mparams.generator_turns):
-                    z = np.random.normal(0, 1, (self.params.batch_size, self.params.latent_dim))
+                for _ in range(self.mparams.generator_turns):
+                    z = np.random.normal(0, 1, (self.mparams.batch_size, self.params.latent_dim))
                     g_loss = self.train_generator(z)
 
                 progress.set_postfix(
@@ -129,7 +130,6 @@ class Train(ABC):
                 initial_sample=initial_sample,
                 loss_dg=loss_dg,
                 accuracies_rf=accuracies_rf,
-                mparams=mparams,
             )
             if updated:
                 initial_sample = True
@@ -142,11 +142,10 @@ class Train(ABC):
         loss_dg: List[Tuple[float, float]],
         accuracies_rf: List[Tuple[float, float]],
         initial_sample: bool,
-        mparams: MutableHyperParams,
     ) -> bool:
-        sample_interval = mparams.sample_interval
+        sample_interval = self.mparams.sample_interval
         checkpoint_path = self.params.checkpoint_path
-        checkpoint_interval = mparams.checkpoint_interval
+        checkpoint_interval = self.mparams.checkpoint_interval
 
         if checkpoint_path is not None and checkpoint_interval is not None and (iteration) % checkpoint_interval == 0:
             save_iterations(f"{checkpoint_path}/{iteration}/iteration", iteration)
@@ -186,13 +185,13 @@ class Train(ABC):
 
 
 class TrainBCE(Train):
-    def __init__(self, built_model: BuiltModel, params: HyperParams) -> None:
-        super().__init__(built_model, params)
+    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams) -> None:
+        super().__init__(built_model, params, mparams)
         self.loss = Loss(params)
 
     def train_discriminator(self, gen_imgs, real_imgs):
-        real = np.ones((self.params.batch_size, 1))
-        fake = np.zeros((self.params.batch_size, 1))
+        real = np.ones((self.mparams.batch_size, 1))
+        fake = np.zeros((self.mparams.batch_size, 1))
         d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_imgs, real)
         d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(gen_imgs, fake)
         d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
@@ -200,7 +199,7 @@ class TrainBCE(Train):
         return d_loss, d_loss_fake, d_loss_real, d_acc, d_fake_acc, d_real_acc
 
     def train_generator(self, z):
-        real = np.ones((self.params.batch_size, 1))
+        real = np.ones((self.mparams.batch_size, 1))
         g_loss = self.gan.train_on_batch(z, real)
         return g_loss
 
@@ -210,13 +209,13 @@ class TrainBCESimilarity(Train):
     BCE with an additional loss based on cosine similarity
     """
 
-    def __init__(self, built_model: BuiltModel, params: HyperParams) -> None:
-        super().__init__(built_model, params)
+    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams) -> None:
+        super().__init__(built_model, params, mparams)
         self.loss = Loss(params)
 
     def train_discriminator(self, gen_imgs, real_imgs):
-        real = np.ones((self.params.batch_size, 1))
-        fake = np.zeros((self.params.batch_size, 1))
+        real = np.ones((self.mparams.batch_size, 1))
+        fake = np.zeros((self.mparams.batch_size, 1))
         d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_imgs, real)
         d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(gen_imgs, fake)
         d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
@@ -248,20 +247,20 @@ class TrainBCESimilarity(Train):
 
 
 class TrainMSE(Train):
-    def __init__(self, built_model: BuiltModel, params: HyperParams) -> None:
-        super().__init__(built_model, params)
+    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams) -> None:
+        super().__init__(built_model, params, mparams)
         self.loss = Loss(params)
 
     def train_discriminator(self, gen_imgs, real_imgs):
-        d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_imgs, np.ones((self.params.batch_size, 1)))
-        d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(gen_imgs, -np.ones((self.params.batch_size, 1)))
+        d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_imgs, np.ones((self.mparams.batch_size, 1)))
+        d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(gen_imgs, -np.ones((self.mparams.batch_size, 1)))
         d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
         d_acc = 0.5 * np.add(d_real_acc, d_fake_acc)
 
         return d_loss, d_loss_fake, d_loss_real, d_acc, d_fake_acc, d_real_acc
 
     def train_generator(self, z):
-        real = np.ones((self.params.batch_size, 1))
+        real = np.ones((self.mparams.batch_size, 1))
         g_loss = self.gan.train_on_batch(z, real)
         return g_loss
 
@@ -270,7 +269,7 @@ class TrainMSE(Train):
         """
         Need a custom train loop for the generator because I want to factor in generators predictions
         """
-        misleading_labels = np.zeros((self.params.batch_size, 1))
+        misleading_labels = np.zeros((self.mparams.batch_size, 1))
         with tf.GradientTape() as tape:
             # Generate fake images using the generator
             generated_images = self.generator(z, training=True)
