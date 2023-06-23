@@ -87,7 +87,7 @@ class PokemonModel(Model):
         model.add(Flatten())
         model.add(Dense(1))
 
-        model.summary(line_length=200)
+        # model.summary(line_length=200)
         return model
 
     def build_gan(self, generator, discriminator):
@@ -104,9 +104,21 @@ class PokemonExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 100000] = MutableHyperParams(
+        schedule[0, 3200] = MutableHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
+            batch_size=32,
+            adam_b1=0.5,
+            iterations=3200,
+            sample_interval=10,
+            discriminator_turns=1,
+            generator_turns=1,
+            checkpoint_interval=200,
+        )
+
+        schedule[3201, 100000] = MutableHyperParams(
+            gen_learning_rate=0.0001,
+            dis_learning_rate=0.0001,
             batch_size=32,
             adam_b1=0.5,
             iterations=100000,
@@ -115,7 +127,6 @@ class PokemonExperiment(Experiment):
             generator_turns=1,
             checkpoint_interval=200,
         )
-
 
         return schedule
 
