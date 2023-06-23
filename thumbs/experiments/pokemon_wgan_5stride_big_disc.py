@@ -1,4 +1,5 @@
 import thumbs.config_logging  # must be first
+import tensorflow as tf
 import os
 from typing import List, Tuple, Iterator
 from rangedict import RangeDict
@@ -6,7 +7,7 @@ import numpy as np
 
 from thumbs.experiment import Experiment
 from thumbs.loss import Loss
-from thumbs.data import get_pokemon_data
+from thumbs.data import get_pokemon_data256
 from thumbs.params import HyperParams, MutableHyperParams
 from thumbs.model.model import Model, BuiltModel
 
@@ -96,29 +97,41 @@ class PokemonModel(Model):
 
 class PokemonExperiment(Experiment):
     def get_data(self) -> np.ndarray:
-        return get_pokemon_data(self.params.img_shape)
+        return get_pokemon_data256(self.params.img_shape)
 
     def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
         return TrainWassersteinGP(model, self.params, mparams)
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 100000] = MutableHyperParams(
+        schedule[0, 200000] = MutableHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
-            batch_size=16,
+            batch_size=32,
             adam_b1=0.5,
-            iterations=100000,
+            iterations=200000,
             sample_interval=10,
             discriminator_turns=1,
             generator_turns=1,
-            checkpoint_interval=200,
+            checkpoint_interval=400,
         )
 
         return schedule
 
+    def custom_agumentation(self, image: tf.Tensor) -> tf.Tensor:
+        """
+        No zoom for this dataset since the pokemon are much closer to the edge of the frame
+        """
+        if not self.augment_data():
+            return image
+
+        image = tf.image.random_flip_left_right(image)
+        image = tf.keras.layers.experimental.preprocessing.RandomRotation(0.05)(image)
+
+        return image
+
     def get_params(self) -> HyperParams:
-        name = "pokemon_wgan_5stride_big_disc"
+        name = "pokemon_wgan_5stride_big_disc_good_dataset"
 
         exp_dir = 'EXP_DIR'
         if exp_dir in os.environ:
@@ -142,7 +155,6 @@ class PokemonExperiment(Experiment):
 
     def get_model(self, mparams: MutableHyperParams) -> Model:
         return PokemonModel(self.params, mparams)
-
 
 if __name__ == "__main__":
     PokemonExperiment().start()
