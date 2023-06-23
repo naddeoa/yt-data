@@ -41,38 +41,26 @@ class PokemonModel(Model):
     def build_generator(self, z_dim):
         model = Sequential(name="generator_2")
 
-        model.add(Dense(2048* 4 * 4, input_dim=z_dim))
-        model.add(Reshape((4, 4, 2048)))
+        model.add(Dense(1024* 8 * 8, input_dim=z_dim))
+        model.add(Reshape((8, 8, 1024)))
 
-        model.add(Conv2DTranspose(1024, kernel_size=3, strides=2, padding="same"))
+        model.add(Conv2DTranspose(1024, kernel_size=5, strides=2, padding="same"))
         model.add(BatchNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2DTranspose(512, kernel_size=3, strides=2, padding="same"))
+        model.add(Conv2DTranspose(512, kernel_size=5, strides=2, padding="same"))
         model.add(BatchNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2DTranspose(512, kernel_size=3, strides=1, padding="same"))
+        model.add(Conv2DTranspose(256, kernel_size=5, strides=2, padding="same"))
         model.add(BatchNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2DTranspose(256, kernel_size=3, strides=2, padding="same"))
+        model.add(Conv2DTranspose(128, kernel_size=5, strides=2, padding="same"))
         model.add(BatchNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2DTranspose(256, kernel_size=3, strides=1, padding="same"))
-        model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.2))
-
-        model.add(Conv2DTranspose(128, kernel_size=3, strides=2, padding="same"))
-        model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.2))
-
-        model.add(Conv2DTranspose(128, kernel_size=3, strides=1, padding="same"))
-        model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.2))
-
-        model.add(Conv2DTranspose(3, kernel_size=3, strides=2, padding="same"))
+        model.add(Conv2DTranspose(3, kernel_size=5, strides=2, padding="same"))
         model.add(Activation("tanh"))
 
         model.summary(line_length=200)
@@ -80,28 +68,24 @@ class PokemonModel(Model):
 
     def build_discriminator(self, img_shape):
         model = Sequential(name="discriminator")
-
-        model.add(Conv2D(64, kernel_size=3, strides=2, padding="same", input_shape=img_shape))
+        model.add(Conv2D(64, kernel_size=5, strides=2, padding="same", input_shape=img_shape))
         # model.add(LayerNormalization())
         # model.add(BatchNormalizationV1())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(128, kernel_size=3, strides=2, padding="same"))
+        model.add(Conv2D(128, kernel_size=5, strides=2, padding="same"))
         # model.add(LayerNormalization())
         # model.add(BatchNormalizationV1())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(256, kernel_size=3, strides=2, padding="same"))
+        model.add(Conv2D(256, kernel_size=5, strides=2, padding="same"))
         # model.add(LayerNormalization())
         # model.add(BatchNormalizationV1())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(512, kernel_size=3, strides=2, padding="same"))
+        model.add(Conv2D(512, kernel_size=5, strides=2, padding="same"))
         # model.add(LayerNormalization())
         # model.add(BatchNormalizationV1())
-        model.add(LeakyReLU(alpha=0.2))
-
-        model.add(Conv2D(1024, kernel_size=3, strides=2, padding="same"))
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Flatten())
@@ -124,22 +108,10 @@ class PokemonExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 4700] = MutableHyperParams(
+        schedule[0, 100000] = MutableHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
-            batch_size=128,
-            adam_b1=0.5,
-            iterations=4700,
-            sample_interval=10,
-            discriminator_turns=1,
-            generator_turns=1,
-            checkpoint_interval=200,
-        )
-
-        schedule[4701, 100000] = MutableHyperParams(
-            gen_learning_rate=0.00002,
-            dis_learning_rate=0.00002,
-            batch_size=128,
+            batch_size=32,
             adam_b1=0.5,
             iterations=100000,
             sample_interval=10,
@@ -148,10 +120,11 @@ class PokemonExperiment(Experiment):
             checkpoint_interval=200,
         )
 
+
         return schedule
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_wgan_3"
+        name = "pokemon_wgan_5stride"
 
         exp_dir = 'EXP_DIR'
         if exp_dir in os.environ:
