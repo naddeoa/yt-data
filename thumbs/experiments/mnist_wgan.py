@@ -1,4 +1,5 @@
 import thumbs.config_logging  # must be first
+from keras.datasets import mnist
 import os
 from typing import List, Tuple, Iterator
 from rangedict import RangeDict
@@ -37,49 +38,85 @@ from thumbs.train import Train, TrainMSE, TrainBCE, TrainBCESimilarity, TrainWas
 infinity = float("inf")
 
 
-class PokemonModel(Model):
+class MnistModel(Model):
     def build_generator(self, z_dim):
-        model = Sequential(name="generator")
 
-        model.add(Dense(1024* 8 * 8, input_dim=z_dim))
+        model = Sequential()
+
+        # Reshape input into 7x7x256 tensor via a fully connected layer
+        model.add(Dense(256 * 7 * 7, input_dim=z_dim))
+        model.add(Reshape((7, 7, 256)))
+
+        # Transposed convolution layer, from 7x7x256 into 14x14x128 tensor
+        model.add(Conv2DTranspose(128, kernel_size=3, strides=2, padding='same'))
+
+        # Batch normalization
         model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Reshape((8, 8, 1024)))
+        # Leaky ReLU activation
+        model.add(LeakyReLU(alpha=0.01))
 
-        model.add(Conv2DTranspose(512, kernel_size=5, strides=2, padding="same"))
+        # Transposed convolution layer, from 14x14x128 to 14x14x64 tensor
+        model.add(Conv2DTranspose(64, kernel_size=3, strides=1, padding='same'))
+
+        # Batch normalization
         model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2DTranspose(256, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.2))
+        # Leaky ReLU activation
+        model.add(LeakyReLU(alpha=0.01))
 
-        model.add(Conv2DTranspose(128, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.2))
+        # Transposed convolution layer, from 14x14x64 to 28x28x1 tensor
+        model.add(Conv2DTranspose(1, kernel_size=3, strides=2, padding='same'))
 
-        model.add(Conv2DTranspose(3, kernel_size=3, strides=2, padding="same"))
-        model.add(Activation("tanh"))
+        # Output layer with tanh activation
+        model.add(Activation('tanh'))
 
         model.summary(line_length=200)
         return model
 
     def build_discriminator(self, img_shape):
-        model = Sequential(name="discriminator")
+        model = Sequential()
 
-        model.add(Conv2D(64, kernel_size=5, strides=2, padding="same", input_shape=img_shape))
+        # Convolutional layer, from 28x28x1 into 14x14x32 tensor
+        model.add(
+            Conv2D(32,
+                   kernel_size=3,
+                   strides=2,
+                   input_shape=img_shape,
+                   padding='same'))
+
+        # Leaky ReLU activation
+        model.add(LeakyReLU(alpha=0.01))
+
+        # Convolutional layer, from 14x14x32 into 7x7x64 tensor
+        model.add(
+            Conv2D(64,
+                   kernel_size=3,
+                   strides=2,
+                   input_shape=img_shape,
+                   padding='same'))
+
+        # Batch normalization
         model.add(BatchNormalizationV1())
-        model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(128, kernel_size=5, strides=2, padding="same"))
+        # Leaky ReLU activation
+        model.add(LeakyReLU(alpha=0.01))
+
+        # Convolutional layer, from 7x7x64 tensor into 3x3x128 tensor
+        model.add(
+            Conv2D(128,
+                   kernel_size=3,
+                   strides=2,
+                   input_shape=img_shape,
+                   padding='same'))
+
+        # Batch normalization
         model.add(BatchNormalizationV1())
-        model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(256, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalizationV1())
-        model.add(LeakyReLU(alpha=0.2))
+        # Leaky ReLU activation
+        model.add(LeakyReLU(alpha=0.01))
 
+        # Output layer with sigmoid activation
         model.add(Flatten())
         model.add(Dense(1))
 
@@ -91,9 +128,15 @@ class PokemonModel(Model):
         return model
 
 
-class PokemonExperiment(Experiment):
+class MnistExperiment(Experiment):
     def get_data(self) -> np.ndarray:
-        return get_pokemon_data(self.params.img_shape)
+        (X_train, _), (_, _) = mnist.load_data()
+
+        # Rescale [0, 255] grayscale pixel values to [-1, 1]
+        X_train = X_train / 127.5 - 1.0
+        X_train = np.expand_dims(X_train, axis=3)
+        return X_train
+        # return get_pokemon_data(self.params.img_shape)
 
     def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
         return TrainWassersteinGP(model, self.params, mparams)
@@ -103,10 +146,10 @@ class PokemonExperiment(Experiment):
         schedule[0, 100000] = MutableHyperParams(
             gen_learning_rate=0.002,
             dis_learning_rate=0.002,
-            batch_size=32,
+            batch_size=128,
             adam_b1=0.5,
             iterations=100000,
-            sample_interval=10,
+            sample_interval=2,
             discriminator_turns=1,
             generator_turns=1,
             checkpoint_interval=200,
@@ -115,7 +158,7 @@ class PokemonExperiment(Experiment):
         return schedule
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_deeper"
+        name = "mnist_wgan"
 
         exp_dir = 'EXP_DIR'
         if exp_dir in os.environ:
@@ -125,7 +168,7 @@ class PokemonExperiment(Experiment):
 
         return HyperParams(
             latent_dim=100,
-            img_shape=(128, 128, 3),
+            img_shape=(28, 28, 1),
             weight_path=f"{base_dir}/{name}/weights",
             checkpoint_path=f"{base_dir}/{name}/checkpoints",
             prediction_path=f"{base_dir}/{name}/predictions",
@@ -138,9 +181,9 @@ class PokemonExperiment(Experiment):
         )
 
     def get_model(self, mparams: MutableHyperParams) -> Model:
-        return PokemonModel(self.params, mparams)
+        return MnistModel(self.params, mparams)
 
 
 if __name__ == "__main__":
-    PokemonExperiment().start()
+    MnistExperiment().start()
 
