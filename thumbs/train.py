@@ -3,7 +3,7 @@ import json
 from tensorflow.keras import backend as K
 import numpy as np
 from thumbs.model.model import BuiltModel
-from thumbs.util import get_current_time
+from thumbs.util import get_current_time, is_colab
 from thumbs.viz import show_accuracy_plot, show_loss_plot, show_samples
 from thumbs.params import HyperParams, MutableHyperParams
 from thumbs.loss import Loss
@@ -13,7 +13,7 @@ import pathlib
 import os
 
 
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 
 def trunc(loss):
@@ -114,8 +114,8 @@ class Train(ABC):
             range(start_iter, self.mparams.iterations + 1), total=self.mparams.iterations, initial=start_iter, position=0, leave=True, desc="epoch"
         )
         for iteration in progress:
-            # batches = dataset.shuffle(buffer_size=1024).batch(self.params.batch_size, drop_remainder=True)
-            for imgs in tqdm(dataset, position=1, leave=False, desc="batch"):
+            # Google colab can't handle two progress bars, so overwrite the epoch one each time.
+            for imgs in tqdm(dataset, position=1 if not is_colab() else 0, leave=False if not is_colab() else True, desc="batch"):
                 # -------------------------
                 #  Train the Discriminator
                 # -------------------------
@@ -140,15 +140,15 @@ class Train(ABC):
                     z = np.random.normal(0, 1, (self.mparams.batch_size, self.params.latent_dim))
                     g_loss = self.train_generator(z)
 
-                progress.set_postfix(
-                    {
-                        "d_loss": trunc(d_loss),
-                        "g_loss": trunc(g_loss),
-                        "d_acc": trunc(d_acc),
-                        "d_fake_acc": trunc(d_fake_acc),
-                        "d_real_acc": trunc(d_real_acc),
-                    }
-                )
+                postfix = {
+                    "d_loss": trunc(d_loss),
+                    "g_loss": trunc(g_loss),
+                    "d_acc": trunc(d_acc),
+                    "d_fake_acc": trunc(d_fake_acc),
+                    "d_real_acc": trunc(d_real_acc),
+                }
+
+                progress.set_postfix(postfix)
 
                 # accuracies.append(d_acc)
                 accuracies_rf.append((d_real_acc, d_fake_acc))
@@ -159,6 +159,8 @@ class Train(ABC):
                 loss_dg=loss_dg,
                 accuracies_rf=accuracies_rf,
             )
+            if is_colab():
+                print(postfix)
             if updated:
                 accuracies_rf = []
                 loss_dg = []

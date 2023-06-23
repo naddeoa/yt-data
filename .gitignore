@@ -7,4 +7,4 @@ credentials.json
 /.venv
 secrets/
 old_stuff
-./experiments
+/experiments
