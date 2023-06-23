@@ -97,7 +97,7 @@ class MnistModel(Model):
                    padding='same'))
 
         # Batch normalization
-        model.add(BatchNormalizationV1())
+        #model.add(BatchNormalizationV1())
 
         # Leaky ReLU activation
         model.add(LeakyReLU(alpha=0.01))
@@ -111,7 +111,7 @@ class MnistModel(Model):
                    padding='same'))
 
         # Batch normalization
-        model.add(BatchNormalizationV1())
+        #model.add(BatchNormalizationV1())
 
         # Leaky ReLU activation
         model.add(LeakyReLU(alpha=0.01))
