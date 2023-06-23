@@ -10,6 +10,7 @@ from typing import Optional
 class BuiltModel:
     gan: tf.keras.Model
     discriminator: tf.keras.Model
+    discriminator_optimizer: tf.keras.Model
     generator: tf.keras.Model
     generator_optimizer: tf.keras.optimizers.Optimizer
 
@@ -34,17 +35,22 @@ class Model(ABC):
 
     def build(self) -> BuiltModel:
         discriminator = self.build_discriminator(self.params.img_shape)
+        discriminator_optimizer = Adam(learning_rate=self.mparams.dis_learning_rate, beta_1=self.mparams.adam_b1)
         discriminator.compile(
             loss=self.loss,
-            optimizer=Adam(learning_rate=self.mparams.dis_learning_rate, beta_1=self.mparams.adam_b1),
+            optimizer=discriminator_optimizer,
             metrics=["accuracy"],
         )
 
         generator = self.build_generator(self.params.latent_dim)
 
+        # TODO figure out a way of managing this flag. For the wgan that doesn't use compile it ends up
+        # tanking the discriminator in the custom training loop. Maybe its enough to set it back to True
+        # after compiling the gan
         discriminator.trainable = False
         gan = self.build_gan(generator, discriminator)
         generator_optimizer = Adam(learning_rate=self.mparams.gen_learning_rate, beta_1=self.mparams.adam_b1)
         gan.compile(loss=self.loss, optimizer=generator_optimizer)
+        discriminator.trainable = True
 
-        return BuiltModel(gan, discriminator, generator, generator_optimizer)
+        return BuiltModel(gan, discriminator, discriminator_optimizer, generator, generator_optimizer)

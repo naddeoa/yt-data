@@ -9,6 +9,9 @@ class HyperParams:
     weight_path: str  # = "./experiments/model_name/weights"
     prediction_path: str  # = "./experiments/model_name/predictions"
     iteration_path: str  # = "./experiments/model_name/iteration"
+    iteration_checkpoints_path: str  # = "./experiments/model_name/iteration"
+    loss_path: str  # = "./experiments/model_name/loss"
+    accuracy_path: str  # = "./experiments/model_name/accuracy"
     similarity_threshold: float  # = 0.0
     similarity_penalty: float  # = 10.0
     checkpoint_path: str  # = "./experiments/model_name/checkpoint"

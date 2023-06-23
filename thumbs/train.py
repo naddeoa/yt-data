@@ -1,4 +1,5 @@
 import tensorflow as tf
+import json
 from tensorflow.keras import backend as K
 import numpy as np
 from thumbs.model.model import BuiltModel
@@ -6,7 +7,7 @@ from thumbs.util import get_current_time
 from thumbs.viz import show_accuracy_plot, show_loss_plot, show_samples
 from thumbs.params import HyperParams, MutableHyperParams
 from thumbs.loss import Loss
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple, Any, Optional
 from abc import ABC, abstractmethod
 import pathlib
 import os
@@ -29,6 +30,20 @@ def load_iterations(iteration_path: str) -> Optional[int]:
 
     except Exception as e:
         print("No save file for iteration count")
+        return None
+
+
+def save_as_json(l: Any, path: str) -> None:
+    with open(path, 'w') as f:
+        json.dump(l, f)
+
+
+def load_from_json(path: str) -> Optional[Any]:
+    # load something that was serialized with save_as_json
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except Exception as e:
         return None
 
 
@@ -57,14 +72,29 @@ class Train(ABC):
         self.mparams = mparams
         self.generator = built_model.generator
         self.discriminator = built_model.discriminator
+        self.discriminator_optimizer  = built_model.discriminator_optimizer
         self.generator_optimizer = built_model.generator_optimizer
         self.params = params
         self.loss = Loss(params)
 
-        self.losses: List[Tuple[float, float]] = []
-        self.accuracies: List[float] = []
+        self.losses: List[Tuple[float, float]] = load_from_json(self.params.loss_path) or []
+        self.accuracies: List[float] = load_from_json(self.params.accuracy_path) or []
+        self.iteration_checkpoints: List[int] = load_from_json(self.params.iteration_checkpoints_path) or []
         self.accuracies_rf: List[Tuple[float, float]] = []
-        self.iteration_checkpoints: List[int] = []
+
+        print("------------------------------------------------------------")
+        print("PARAMS")
+        print(params)
+
+        print()
+        print("MUTABLE PARAMS")
+        print(mparams)
+
+        print()
+        print(f"Restored losses: {len(self.losses)}")
+        print(f"Restored iterations: {len(self.iteration_checkpoints)}")
+        print("------------------------------------------------------------")
+
 
     @abstractmethod
     def train_discriminator(self, gen_imgs, real_imgs):
@@ -77,11 +107,9 @@ class Train(ABC):
     def train(self, dataset: tf.data.Dataset, start_iter=0):
         load_weights(self.gan, self.params.weight_path)
 
-        # Labels for fake images: all zeros
-        initial_sample = False
-
         accuracies_rf = []
         loss_dg: List[Tuple[float, float]] = []
+
         progress = tqdm(
             range(start_iter, self.mparams.iterations + 1), total=self.mparams.iterations, initial=start_iter, position=0, leave=True, desc="epoch"
         )
@@ -112,9 +140,6 @@ class Train(ABC):
                     z = np.random.normal(0, 1, (self.mparams.batch_size, self.params.latent_dim))
                     g_loss = self.train_generator(z)
 
-                print()
-                tf.print(d_loss)
-                print()
                 progress.set_postfix(
                     {
                         "d_loss": trunc(d_loss),
@@ -131,12 +156,12 @@ class Train(ABC):
 
             updated = self.save_sample(
                 iteration=iteration,
-                initial_sample=initial_sample,
                 loss_dg=loss_dg,
                 accuracies_rf=accuracies_rf,
             )
             if updated:
-                initial_sample = True
+                accuracies_rf = []
+                loss_dg = []
 
             yield iteration
 
@@ -145,7 +170,6 @@ class Train(ABC):
         iteration: int,
         loss_dg: List[Tuple[float, float]],
         accuracies_rf: List[Tuple[float, float]],
-        initial_sample: bool,
     ) -> bool:
         sample_interval = self.mparams.sample_interval
         checkpoint_path = self.params.checkpoint_path
@@ -155,11 +179,18 @@ class Train(ABC):
             save_iterations(f"{checkpoint_path}/{iteration}/iteration", iteration)
             self.gan.save_weights(f"{checkpoint_path}/{iteration}/weights")
 
-        if (iteration) % sample_interval == 0 or not initial_sample:
+        if (iteration) % sample_interval == 0:
             # Save losses and accuracies so they can be plotted after training
-            self.losses.append(np.mean(loss_dg, axis=0))
-            self.accuracies_rf.append(100.0 * np.mean(accuracies_rf, axis=0))
+            self.gan.save_weights(self.params.weight_path)
+            save_iterations(self.params.iteration_path, iteration)
+
+            self.losses.append(np.mean(loss_dg, axis=0).tolist())
+            self.accuracies_rf.append(np.mean(accuracies_rf, axis=0).tolist())
             self.iteration_checkpoints.append(iteration)
+
+            save_as_json(self.losses, self.params.loss_path)
+            save_as_json(self.accuracies, self.params.accuracy_path)
+            save_as_json(self.iteration_checkpoints, self.params.iteration_checkpoints_path)
 
             file_name = str(iteration)
             show_samples(
@@ -174,14 +205,12 @@ class Train(ABC):
                 dir=self.params.prediction_path,
                 file_name=file_name,
             )
-            show_accuracy_plot(
-                self.accuracies_rf,
-                self.iteration_checkpoints,
-                dir=self.params.prediction_path,
-                file_name=file_name,
-            )
-            self.gan.save_weights(self.params.weight_path)
-            save_iterations(self.params.iteration_path, iteration)
+            #show_accuracy_plot(
+            #    self.accuracies_rf,
+            #    self.iteration_checkpoints,
+            #    dir=self.params.prediction_path,
+            #    file_name=file_name,
+            #)
 
             return True
         else:
@@ -193,40 +222,81 @@ class TrainWassersteinGP(Train):
         super().__init__(built_model, params, mparams)
         self.loss = Loss(params)
 
-    def gradient_penalty(self, real_imgs, gen_imgs):
-        # batch_size = real_imgs.shape[0]
-        alpha = np.random.normal(0., 1., (self.mparams.batch_size, 1, 1, 1))
-        interpolated_imgs = alpha * real_imgs + (1 - alpha) * gen_imgs
-        interpolated_imgs = tf.Variable(interpolated_imgs, dtype=tf.float32)
+    def gradient_penalty(self, real_images, fake_images):
+        """Calculates the gradient penalty.
 
-        with tf.GradientTape() as tape:
-            tape.watch(interpolated_imgs)
-            pred = self.discriminator(interpolated_imgs)
+        This loss is calculated on an interpolated image
+        and added to the discriminator loss.
+        """
+        # Get the interpolated image
+        alpha = tf.random.normal([self.mparams.batch_size, 1, 1, 1], 0.0, 1.0)
+        diff = fake_images - real_images
+        interpolated = real_images + alpha * diff
 
-        grads = tape.gradient(pred, interpolated_imgs)
+        with tf.GradientTape() as gp_tape:
+            gp_tape.watch(interpolated)
+            # 1. Get the discriminator output for this interpolated image.
+            pred = self.discriminator(interpolated, training=True)
+
+        # 2. Calculate the gradients w.r.t to this interpolated image.
+        grads = gp_tape.gradient(pred, [interpolated])[0]
+        # 3. Calculate the norm of the gradients.
         norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3]))
-        gp = tf.reduce_mean((norm - 1.)**2)
-
+        gp = tf.reduce_mean((norm - 1.0) ** 2)
         return gp
 
+    def discriminator_loss(self, real_img, fake_img):
+        real_loss = tf.reduce_mean(real_img)
+        fake_loss = tf.reduce_mean(fake_img)
+        return fake_loss - real_loss
+
+
+    @tf.function
     def train_discriminator(self, gen_imgs, real_imgs):
-        batch_size = self.mparams.batch_size
-        real = -np.ones((batch_size, 1))
-        fake = np.ones((batch_size, 1))
+        # Get the latent vector
+        with tf.GradientTape() as tape:
+            # Get the logits for the fake images
+            fake_logits = self.discriminator(gen_imgs, training=True)
+            # Get the logits for the real images
+            real_logits = self.discriminator(real_imgs, training=True)
+            # Calculate the discriminator loss using the fake and real image logits
+            d_cost = self.discriminator_loss(real_img=real_logits, fake_img=fake_logits)
+            # Calculate the gradient penalty
+            gp = self.gradient_penalty(real_imgs, gen_imgs)
+            # Add the gradient penalty to the original discriminator loss
+            gp_weight = 10
+            d_loss = d_cost + gp * gp_weight
 
-        d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_imgs, real)
-        d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(gen_imgs, fake)
-        d_acc = 0.5 * np.add(d_real_acc, d_fake_acc)
-        gp = self.gradient_penalty(real_imgs, gen_imgs)
+        # Get the gradients w.r.t the discriminator loss
+        d_gradient = tape.gradient(d_loss, self.discriminator.trainable_variables)
+        # Update the weights of the discriminator using the discriminator optimizer
+        self.discriminator_optimizer.apply_gradients(
+            zip(d_gradient, self.discriminator.trainable_variables)
+        )
+        return d_loss, 0, 0, 0, 0, 0
 
-        d_loss = 0.5 * np.add(d_loss_real, d_loss_fake) + 10 * gp
-        # return d_loss, 0, 0, 0, 0, 0
-        return d_loss, d_loss_fake, d_loss_real, d_acc, d_fake_acc, d_real_acc
 
+    def generator_loss(self, fake_img):
+        return -tf.reduce_mean(fake_img)
+
+    @tf.function
     def train_generator(self, z):
-        valid = -np.ones((self.mparams.batch_size, 1))
-        g_loss = self.gan.train_on_batch(z, valid)
+        with tf.GradientTape() as tape:
+            # Generate fake images using the generator
+            generated_images = self.generator(z, training=True)
+            # Get the discriminator logits for fake images
+            gen_img_logits = self.discriminator(generated_images, training=True)
+            # Calculate the generator loss
+            g_loss = self.generator_loss(gen_img_logits)
+
+        # Get the gradients w.r.t the generator loss
+        gen_gradient = tape.gradient(g_loss, self.generator.trainable_variables)
+        # Update the weights of the generator using the generator optimizer
+        self.generator_optimizer.apply_gradients(
+            zip(gen_gradient, self.generator.trainable_variables)
+        )
         return g_loss
+
 
 
 

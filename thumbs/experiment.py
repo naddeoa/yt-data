@@ -77,9 +77,12 @@ class Experiment(ABC):
 
     def start(self) -> None:
         print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
-        print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
         schedule = self.get_mutable_params()
-        i = load_iterations(self.params.iteration_path) or 0
+        i = load_iterations(self.params.iteration_path)
+        if i is not None:
+            i += 1 # we already did w/e iteration was saved so add one
+        else:
+            i = 0
         dataset = tf.data.Dataset.from_tensor_slices(self.get_data())
 
         while True:
@@ -92,10 +95,6 @@ class Experiment(ABC):
 
             if i >= mparams.iterations:
                 continue
-
-            print("------------------------------------------------------------")
-            print(f"Training with params {mparams}, starting from iteration {i} to {mparams.iterations}")
-            print("------------------------------------------------------------")
 
             model = self.get_model(mparams)
             train = self.get_train(model.build(), mparams)
