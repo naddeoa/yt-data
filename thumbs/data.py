@@ -6,7 +6,7 @@ import PIL
 from typing import List, Tuple, Optional
 import os
 from thumbs.util import is_notebook
-from thumbs.viz import visualize_preprocessed_image, visualize_image_scatter
+from thumbs.viz import visualize_preprocessed_image, visualize_image_scatter, visualize_thumbnails
 import numpy as np
 from PIL import Image
 
@@ -34,6 +34,7 @@ def load_and_preprocess_image(img_path, size: Tuple[int, int, int], file_type: s
     return img_array
 
 
+
 def get_pokemon_data(
     size: Tuple[int, int, int] = (128, 128, 3),
 ) -> np.ndarray:
@@ -52,6 +53,7 @@ def get_pokemon_data(
     ]
 
     images = np.array(jpgs)
+    print(f'Shape of images: {images.shape}')
 
     if is_notebook():
         # Make sure the preprocessing worked
@@ -60,6 +62,7 @@ def get_pokemon_data(
         visualize_image_scatter(images)
 
     return images
+
 
 
 def get_yt_data(
@@ -196,3 +199,33 @@ def get_yt_data(
 
     no_shorts_dataset = get_rid_of_shorts(images)
     return np.asarray(no_shorts_dataset)
+
+
+def get_pokemon_data256(
+    size: Tuple[int, int, int] = (128, 128, 3),
+) -> np.ndarray:
+    data_dir = "/home/anthony/workspace/yt-data/data/pokemon"
+    print(f"Images in {data_dir}")
+    file_list = os.listdir(data_dir)
+    print(file_list[:10])
+    print(f"Found {len(file_list)} total files")
+    jpg_file_list = [ file for file in file_list if file.endswith(".jpg") or file.endswith('.jpeg') ]
+
+    print(f"Found {len(jpg_file_list)} jpgs")
+
+    jpgs = [
+        load_and_preprocess_image(f"{data_dir}/{img_path}", size)
+        for img_path in tqdm(jpg_file_list)
+    ]
+
+    images = np.array(jpgs)
+
+    if is_notebook():
+        # Get 36 random images
+        # get vector of 36 random ints between 0 and len(images)
+        ids = np.random.choice(len(images), 36)
+        random_images = images[ids]
+        visualize_thumbnails(random_images, rows=6, cols=6, dir='/tmp', file_name='preview.jpg')
+        visualize_image_scatter(images)
+
+    return images

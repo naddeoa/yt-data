@@ -179,6 +179,9 @@ def visualize_thumbnails(image_list, rows, cols, dir, file_name):
 
     # Show the plot
     # Ensure predictions exists
+    if is_notebook():
+        plt.show()
+
     if not os.path.exists(dir):
         os.mkdir(dir)
     plt.savefig(f"{dir}/_latest.jpg", bbox_inches="tight")

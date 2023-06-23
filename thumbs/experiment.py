@@ -51,7 +51,7 @@ class Experiment(ABC):
             cols=6,
         )
 
-    def _custom_agumentation(self, image: tf.Tensor) -> tf.Tensor:
+    def custom_agumentation(self, image: tf.Tensor) -> tf.Tensor:
         """
         flip, rotate, zoom randomly
         """
@@ -70,7 +70,7 @@ class Experiment(ABC):
     def prepare_data(self, dataset: tf.data.Dataset, mparams: MutableHyperParams) -> tf.data.Dataset:
         return (
             dataset.shuffle(buffer_size=1000)
-            .map(self._custom_agumentation)
+            .map(self.custom_agumentation)
             .batch(mparams.batch_size, drop_remainder=True)
             .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
         )
@@ -78,9 +78,9 @@ class Experiment(ABC):
     def start(self) -> None:
         print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
         schedule = self.get_mutable_params()
-        i = load_iterations(self.params.iteration_path)
-        if i is not None:
-            i += 1 # we already did w/e iteration was saved so add one
+        loaded_i = load_iterations(self.params.iteration_path)
+        if loaded_i is not None:
+            i = loaded_i + 1 # we already did this iteration and it was saved so add one
         else:
             i = 0
         dataset = tf.data.Dataset.from_tensor_slices(self.get_data())

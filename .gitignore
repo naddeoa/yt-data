@@ -1,4 +1,4 @@
-data/
+data/youtube
 secrets.json
 credentials.json
 *.pyc
