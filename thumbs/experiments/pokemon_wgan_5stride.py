@@ -44,10 +44,6 @@ class PokemonModel(Model):
         model.add(Dense(1024* 8 * 8, input_dim=z_dim))
         model.add(Reshape((8, 8, 1024)))
 
-        model.add(Conv2DTranspose(1024, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.2))
-
         model.add(Conv2DTranspose(512, kernel_size=5, strides=2, padding="same"))
         model.add(BatchNormalization())
         model.add(LeakyReLU(alpha=0.2))
