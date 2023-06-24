@@ -41,7 +41,7 @@ def show_accuracy_plot(accuracies_rf, iteration_checkpoints, dir: str, file_name
     plt.close()
 
 
-def show_loss_plot(losses, iteration_checkpoints, dir: str, file_name: str) -> None:
+def show_loss_plot(losses, iteration_checkpoints, dir: str, file_name: str, save_as_latest: bool = True) -> None:
     losses_np = np.asarray(losses)
     disc_loss = losses_np.T[0]
     gen_loss = losses_np.T[1]
@@ -64,7 +64,9 @@ def show_loss_plot(losses, iteration_checkpoints, dir: str, file_name: str) -> N
     # Ensure predictions exists
     if not os.path.exists(f"{dir}"):
         os.mkdir(f"{dir}")
-    plt.savefig(f"{dir}/_latest-loss.jpg")
+
+    if save_as_latest:
+        plt.savefig(f"{dir}/_latest-loss.jpg")
     plt.savefig(f"{dir}/loss-{file_name}.jpg")
     plt.close()
 

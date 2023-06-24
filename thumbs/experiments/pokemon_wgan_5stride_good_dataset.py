@@ -97,8 +97,20 @@ class PokemonExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 200000] = MutableHyperParams(
+        schedule[0, 5600] = MutableHyperParams(
             gen_learning_rate=0.0002,
+            dis_learning_rate=0.0002,
+            batch_size=32,
+            adam_b1=0.5,
+            iterations=5600,
+            sample_interval=10,
+            discriminator_turns=1,
+            generator_turns=1,
+            checkpoint_interval=400,
+        )
+
+        schedule[5601, 200000] = MutableHyperParams(
+            gen_learning_rate=0.0001,
             dis_learning_rate=0.0002,
             batch_size=32,
             adam_b1=0.5,

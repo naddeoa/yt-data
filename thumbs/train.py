@@ -207,6 +207,15 @@ class Train(ABC):
                 dir=self.params.prediction_path,
                 file_name=file_name,
             )
+
+            # most recent data only
+            show_loss_plot(
+                self.losses[-100:],
+                self.iteration_checkpoints[-100:],
+                dir=self.params.prediction_path,
+                file_name='zoom',
+                save_as_latest=False
+            )
             #show_accuracy_plot(
             #    self.accuracies_rf,
             #    self.iteration_checkpoints,
