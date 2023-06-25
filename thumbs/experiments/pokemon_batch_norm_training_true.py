@@ -42,12 +42,8 @@ class PokemonModel(Model):
     def build_generator(self, z_dim):
         model = Sequential(name="generator")
 
-        model.add(Dense(1024* 4 * 4, input_dim=z_dim))
-        model.add(Reshape((4, 4, 1024)))
-
-        model.add(Conv2DTranspose(512 + 256, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.2))
+        model.add(Dense(1024* 8 * 8, input_dim=z_dim))
+        model.add(Reshape((8, 8, 1024)))
 
         model.add(Conv2DTranspose(512, kernel_size=5, strides=2, padding="same"))
         model.add(BatchNormalization())
@@ -69,21 +65,16 @@ class PokemonModel(Model):
 
     def build_discriminator(self, img_shape):
         model = Sequential(name="discriminator")
-
         model.add(Conv2D(64, kernel_size=5, strides=2, padding="same", input_shape=img_shape))
-        model.add(BatchNormalizationV1())
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Conv2D(128, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalizationV1())
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Conv2D(256, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalizationV1())
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Conv2D(512, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalizationV1())
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Flatten())
@@ -107,11 +98,11 @@ class PokemonExperiment(Experiment):
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
         schedule[0, 100000] = MutableHyperParams(
+            iterations=100000,
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
             batch_size=16,
             adam_b1=0.5,
-            iterations=100000,
             sample_interval=10,
             discriminator_turns=1,
             generator_turns=1,
@@ -133,7 +124,7 @@ class PokemonExperiment(Experiment):
         return image
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_batch_norm_training_true"
+        name = "pokemon_latentbig_batchsmall"
 
         exp_dir = 'EXP_DIR'
         if exp_dir in os.environ:
@@ -142,7 +133,7 @@ class PokemonExperiment(Experiment):
             base_dir = '/mnt/e/experiments'
 
         return HyperParams(
-            latent_dim=50,
+            latent_dim=200,
             img_shape=(128, 128, 3),
             weight_path=f"{base_dir}/{name}/weights",
             checkpoint_path=f"{base_dir}/{name}/checkpoints",
@@ -160,11 +151,5 @@ class PokemonExperiment(Experiment):
 
 
 if __name__ == "__main__":
-    """
-    Things this tests:
-        - smaller batch sizes: 32 -> 16
-        - smaller latent space: 100 -> 50
-        - bigger discriminator
-    """
     PokemonExperiment().start()
 
