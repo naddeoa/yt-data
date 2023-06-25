@@ -78,28 +78,28 @@ class PokemonModel(Model):
         # output 32x32x64
 
         model.add(Conv2D(128, kernel_size=5, strides=2, padding="same"))
-        model.add(LayerNormalization())
+        #model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
         # output 16x16x128
 
         model.add(Conv2D(256, kernel_size=5, strides=2, padding="same"))
-        model.add(LayerNormalization())
+        #model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
         # output 8x8x256
 
         model.add(Conv2D(512, kernel_size=5, strides=2, padding="same"))
-        model.add(LayerNormalization())
+        #model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
         model.add(Conv2D(512, kernel_size=5, strides=1, padding="same"))
-        model.add(LayerNormalization())
+        #model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
         # output 4x4x512
 
         model.add(Conv2D(1024, kernel_size=5, strides=2, padding="same"))
-        model.add(LayerNormalization())
+        #model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
         model.add(Conv2D(1024, kernel_size=5, strides=1, padding="same"))
-        model.add(LayerNormalization())
+        #model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
         # output 2x2x1024
 
@@ -127,7 +127,7 @@ class PokemonExperiment(Experiment):
             iterations=100000,
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
-            batch_size=128,
+            batch_size=32,
             adam_b1=0.5,
             sample_interval=10,
             discriminator_turns=1,
