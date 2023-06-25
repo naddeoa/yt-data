@@ -46,15 +46,15 @@ class PokemonModel(Model):
         model.add(Reshape((8, 8, 1024)))
 
         model.add(Conv2DTranspose(512, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalization())
+        model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Conv2DTranspose(256, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalization())
+        model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Conv2DTranspose(128, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalization())
+        model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Conv2DTranspose(3, kernel_size=5, strides=2, padding="same"))
@@ -66,28 +66,40 @@ class PokemonModel(Model):
     def build_discriminator(self, img_shape):
         model = Sequential(name="discriminator")
 
-        # input 128x128x3
+        # input 1281x128x3
         model.add(Conv2D(32, kernel_size=5, strides=2, padding="same", input_shape=img_shape))
+        #model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
-        # output 64x64x32
+        # output 64x64632
 
-        model.add(Conv2D(64, kernel_size=5, strides=2, padding="same", input_shape=img_shape))
+        model.add(Conv2D(64, kernel_size=5, strides=2, padding="same"))
+        #model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
         # output 32x32x64
 
         model.add(Conv2D(128, kernel_size=5, strides=2, padding="same"))
+        model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
         # output 16x16x128
 
         model.add(Conv2D(256, kernel_size=5, strides=2, padding="same"))
+        model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
         # output 8x8x256
 
         model.add(Conv2D(512, kernel_size=5, strides=2, padding="same"))
+        model.add(LayerNormalization())
+        model.add(LeakyReLU(alpha=0.2))
+        model.add(Conv2D(512, kernel_size=5, strides=1, padding="same"))
+        model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
         # output 4x4x512
 
         model.add(Conv2D(1024, kernel_size=5, strides=2, padding="same"))
+        model.add(LayerNormalization())
+        model.add(LeakyReLU(alpha=0.2))
+        model.add(Conv2D(1024, kernel_size=5, strides=1, padding="same"))
+        model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
         # output 2x2x1024
 
@@ -115,12 +127,12 @@ class PokemonExperiment(Experiment):
             iterations=100000,
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
-            batch_size=32,
+            batch_size=128,
             adam_b1=0.5,
             sample_interval=10,
             discriminator_turns=1,
             generator_turns=1,
-            checkpoint_interval=400,
+            checkpoint_interval=200,
         )
 
         return schedule
@@ -147,7 +159,7 @@ class PokemonExperiment(Experiment):
             base_dir = '/mnt/e/experiments'
 
         return HyperParams(
-            latent_dim=120,
+            latent_dim=100,
             img_shape=(128, 128, 3),
             weight_path=f"{base_dir}/{name}/weights",
             checkpoint_path=f"{base_dir}/{name}/checkpoints",
