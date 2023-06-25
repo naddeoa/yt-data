@@ -150,7 +150,7 @@ class PokemonExperiment(Experiment):
         return image
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_giga_disc"
+        name = "pokemon_giga_disc_norm"
 
         exp_dir = 'EXP_DIR'
         if exp_dir in os.environ:
