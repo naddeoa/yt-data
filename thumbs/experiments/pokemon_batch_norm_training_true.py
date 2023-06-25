@@ -42,8 +42,12 @@ class PokemonModel(Model):
     def build_generator(self, z_dim):
         model = Sequential(name="generator")
 
-        model.add(Dense(1024* 8 * 8, input_dim=z_dim))
-        model.add(Reshape((8, 8, 1024)))
+        model.add(Dense(1024* 4 * 4, input_dim=z_dim))
+        model.add(Reshape((4, 4, 1024)))
+
+        model.add(Conv2DTranspose(512 + 256, kernel_size=5, strides=2, padding="same"))
+        model.add(BatchNormalization())
+        model.add(LeakyReLU(alpha=0.2))
 
         model.add(Conv2DTranspose(512, kernel_size=5, strides=2, padding="same"))
         model.add(BatchNormalization())
@@ -138,7 +142,7 @@ class PokemonExperiment(Experiment):
             base_dir = '/mnt/e/experiments'
 
         return HyperParams(
-            latent_dim=20,
+            latent_dim=50,
             img_shape=(128, 128, 3),
             weight_path=f"{base_dir}/{name}/weights",
             checkpoint_path=f"{base_dir}/{name}/checkpoints",
@@ -156,5 +160,11 @@ class PokemonExperiment(Experiment):
 
 
 if __name__ == "__main__":
+    """
+    Things this tests:
+        - smaller batch sizes: 32 -> 16
+        - smaller latent space: 100 -> 50
+        - bigger discriminator
+    """
     PokemonExperiment().start()
 
