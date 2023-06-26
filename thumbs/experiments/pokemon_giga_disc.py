@@ -46,15 +46,15 @@ class PokemonModel(Model):
         model.add(Reshape((8, 8, 1024)))
 
         model.add(Conv2DTranspose(512, kernel_size=5, strides=2, padding="same"))
-        model.add(LayerNormalization())
+        model.add(BatchNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Conv2DTranspose(256, kernel_size=5, strides=2, padding="same"))
-        model.add(LayerNormalization())
+        model.add(BatchNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Conv2DTranspose(128, kernel_size=5, strides=2, padding="same"))
-        model.add(LayerNormalization())
+        model.add(BatchNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Conv2DTranspose(3, kernel_size=5, strides=2, padding="same"))
@@ -90,15 +90,9 @@ class PokemonModel(Model):
         model.add(Conv2D(512, kernel_size=5, strides=2, padding="same"))
         #model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
-        model.add(Conv2D(512, kernel_size=5, strides=1, padding="same"))
-        #model.add(LayerNormalization())
-        model.add(LeakyReLU(alpha=0.2))
         # output 4x4x512
 
         model.add(Conv2D(1024, kernel_size=5, strides=2, padding="same"))
-        #model.add(LayerNormalization())
-        model.add(LeakyReLU(alpha=0.2))
-        model.add(Conv2D(1024, kernel_size=5, strides=1, padding="same"))
         #model.add(LayerNormalization())
         model.add(LeakyReLU(alpha=0.2))
         # output 2x2x1024
