@@ -121,9 +121,22 @@ class PokemonExperiment(Experiment):
             checkpoint_interval=400,
         )
 
-        schedule[6401, 100000] = MutableHyperParams(
+        schedule[6401, 20500] = MutableHyperParams(
             gen_learning_rate=0.00002,
             dis_learning_rate=0.0002,
+            batch_size=32,
+            adam_b1=0.5,
+            iterations=20500,
+            sample_interval=10,
+            discriminator_turns=1,
+            generator_turns=1,
+            checkpoint_interval=400,
+        )
+
+        # Freezing disc to let the generator catch up
+        schedule[20501, 100000] = MutableHyperParams(
+            gen_learning_rate=0.000006,
+            dis_learning_rate=0.00002,
             batch_size=32,
             adam_b1=0.5,
             iterations=100000,

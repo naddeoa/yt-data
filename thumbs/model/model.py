@@ -53,4 +53,10 @@ class Model(ABC):
         gan.compile(loss=self.loss, optimizer=generator_optimizer)
         discriminator.trainable = True
 
-        return BuiltModel(gan, discriminator, discriminator_optimizer, generator, generator_optimizer)
+        return BuiltModel(
+            gan=gan,
+            discriminator=discriminator,
+            discriminator_optimizer=discriminator_optimizer,
+            generator=generator,
+            generator_optimizer=generator_optimizer,
+        )

@@ -28,3 +28,6 @@ class MutableHyperParams:
     generator_turns: int = 1
     discriminator_turns: int = 1
     checkpoint_interval: int = 200
+    discriminator_training: bool = True
+    generator_training: bool = True
+    gradient_penalty_factor: float = 10

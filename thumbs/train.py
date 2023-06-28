@@ -110,6 +110,14 @@ class Train(ABC):
         accuracies_rf = []
         loss_dg: List[Tuple[float, float]] = []
 
+        if not self.mparams.discriminator_training:
+            self.discriminator.trainable = False
+            self.discriminator.compile()
+
+        if not self.mparams.generator_training:
+            self.generator.trainable = False
+            self.generator.compile()
+
         progress = tqdm(
             range(start_iter, self.mparams.iterations + 1), total=self.mparams.iterations, initial=start_iter, position=0, leave=True, desc="epoch"
         )
@@ -275,8 +283,7 @@ class TrainWassersteinGP(Train):
             # Calculate the gradient penalty
             gp = self.gradient_penalty(real_imgs, gen_imgs)
             # Add the gradient penalty to the original discriminator loss
-            gp_weight = 10
-            d_loss = d_cost + gp * gp_weight
+            d_loss = d_cost + (gp * self.mparams.gradient_penalty_factor)
 
         # Get the gradients w.r.t the discriminator loss
         d_gradient = tape.gradient(d_loss, self.discriminator.trainable_variables)

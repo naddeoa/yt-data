@@ -38,22 +38,25 @@ from thumbs.train import Train, TrainMSE, TrainBCE, TrainBCESimilarity, TrainWas
 infinity = float("inf")
 
 
+ngf = 128 
+ndf = 128 
+
 class PokemonModel(Model):
     def build_generator(self, z_dim):
         model = Sequential(name="generator")
 
-        model.add(Dense(1024* 8 * 8, input_dim=z_dim))
-        model.add(Reshape((8, 8, 1024)))
+        model.add(Dense(ngf*8 * 4 * 4, input_dim=z_dim))
+        model.add(Reshape((4, 4, ngf*8)))
 
-        model.add(Conv2DTranspose(512, kernel_size=5, strides=2, padding="same"))
+        model.add(Conv2DTranspose(ngf*4, kernel_size=5, strides=2, padding="same"))
         model.add(BatchNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2DTranspose(256, kernel_size=5, strides=2, padding="same"))
+        model.add(Conv2DTranspose(ngf*2, kernel_size=5, strides=2, padding="same"))
         model.add(BatchNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2DTranspose(128, kernel_size=5, strides=2, padding="same"))
+        model.add(Conv2DTranspose(ngf, kernel_size=5, strides=2, padding="same"))
         model.add(BatchNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
@@ -63,18 +66,23 @@ class PokemonModel(Model):
         model.summary(line_length=200)
         return model
 
+
     def build_discriminator(self, img_shape):
         model = Sequential(name="discriminator")
-        model.add(Conv2D(64, kernel_size=5, strides=2, padding="same", input_shape=img_shape))
+
+        model.add(Conv2D(ndf, kernel_size=5, strides=2, padding="same", input_shape=img_shape))
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(128, kernel_size=5, strides=2, padding="same"))
+        model.add(Conv2D(ndf*2, kernel_size=5, strides=2, padding="same"))
+        #model.add(BatchNormalizationV1())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(256, kernel_size=5, strides=2, padding="same"))
+        model.add(Conv2D(ndf*4, kernel_size=5, strides=2, padding="same"))
+        #model.add(BatchNormalizationV1())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(512, kernel_size=5, strides=2, padding="same"))
+        model.add(Conv2D(ndf*8, kernel_size=5, strides=2, padding="same"))
+        #model.add(BatchNormalizationV1())
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Flatten())
@@ -98,15 +106,16 @@ class PokemonExperiment(Experiment):
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
         schedule[0, 100000] = MutableHyperParams(
-            iterations=100000,
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
-            batch_size=16,
+            batch_size=256,
             adam_b1=0.5,
-            sample_interval=10,
+            iterations=100000,
+            sample_interval=20,
             discriminator_turns=1,
             generator_turns=1,
             checkpoint_interval=400,
+            gradient_penalty_factor=10
         )
 
         return schedule
@@ -124,7 +133,7 @@ class PokemonExperiment(Experiment):
         return image
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_latentbig_batchsmall"
+        name = "pokemon_big_2"
 
         exp_dir = 'EXP_DIR'
         if exp_dir in os.environ:
@@ -133,8 +142,8 @@ class PokemonExperiment(Experiment):
             base_dir = '/mnt/e/experiments'
 
         return HyperParams(
-            latent_dim=200,
-            img_shape=(128, 128, 3),
+            latent_dim=100,
+            img_shape=(64, 64, 3),
             weight_path=f"{base_dir}/{name}/weights",
             checkpoint_path=f"{base_dir}/{name}/checkpoints",
             prediction_path=f"{base_dir}/{name}/predictions",
