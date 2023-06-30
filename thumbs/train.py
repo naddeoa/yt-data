@@ -249,6 +249,8 @@ class TrainWassersteinGP(Train):
         """
         # Get the interpolated image
         alpha = tf.random.normal([self.mparams.batch_size, 1, 1, 1], 0.0, 1.0)
+        # alpha = tf.random.uniform(shape=[self.mparams.batch_size, 1, 1, 1], minval=0.0, maxval=1.0)
+
         diff = fake_images - real_images
         interpolated = real_images + alpha * diff
 

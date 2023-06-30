@@ -133,13 +133,6 @@ def visualize_image_scatter(images):
 
 
 def process_prediction_image(image):
-    # # Scale the image from [-1, 1] to [0, 1]
-    # image = (image + 1) / 2
-    # # Clip values to [0, 1] in case of any numerical instability
-    # image = tf.clip_by_value(image, 0, 1)
-    # # Convert the image tensor to a NumPy array
-    # return image.numpy()
-
     # This scales it back up to the range [0, 255]. It looks a little different
     # rendered from here than it does from -1,1
     image = (image + 1) * 127.5

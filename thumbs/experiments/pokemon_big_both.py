@@ -21,6 +21,7 @@ from keras.layers import (
     Dropout,
     Flatten,
     Reshape,
+    ReLU,
     LeakyReLU,
     LayerNormalization,
     # BatchNormalizationV2,
@@ -41,57 +42,54 @@ infinity = float("inf")
 ngf = 128 
 ndf = 128 
 
+
+
 class PokemonModel(Model):
     def build_generator(self, z_dim):
+        n_hidden_layers = 6
         model = Sequential(name="generator")
 
-        model.add(Dense(ngf*8 * 4 * 4, input_dim=z_dim))
-        model.add(Reshape((4, 4, ngf*8)))
+        # model.add(Dense(1024* 8 * 8, input_dim=z_dim))
+        # model.add(Reshape((8, 8, 1024)))
+        model.add(Reshape((1, 1, z_dim), input_shape=(z_dim,)))
 
-        model.add(Conv2DTranspose(ngf*4, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.2))
-
-        model.add(Conv2DTranspose(ngf*2, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.2))
-
-        model.add(Conv2DTranspose(ngf, kernel_size=5, strides=2, padding="same"))
-        model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.2))
+        # get 6 numbers from an interpolate between 1 4
+        for f in np.linspace(4, 1, n_hidden_layers):
+            model.add(Conv2DTranspose(ngf*f, kernel_size=5, strides=2, padding="same"))
+            if f != 4:
+                # Don't normalize the first layerlayer
+                model.add(BatchNormalization())
+            model.add(ReLU())
 
         model.add(Conv2DTranspose(3, kernel_size=5, strides=2, padding="same"))
         model.add(Activation("tanh"))
 
-        model.summary(line_length=200)
         return model
+
 
 
     def build_discriminator(self, img_shape):
         model = Sequential(name="discriminator")
-
-        model.add(Conv2D(ndf, kernel_size=5, strides=2, padding="same", input_shape=img_shape))
+        model.add(Conv2D(64, kernel_size=5, strides=2, padding="same", input_shape=img_shape))
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(ndf*2, kernel_size=5, strides=2, padding="same"))
-        #model.add(BatchNormalizationV1())
+        model.add(Conv2D(128, kernel_size=5, strides=2, padding="same"))
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(ndf*4, kernel_size=5, strides=2, padding="same"))
-        #model.add(BatchNormalizationV1())
+        model.add(Conv2D(256, kernel_size=5, strides=2, padding="same"))
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(ndf*8, kernel_size=5, strides=2, padding="same"))
-        #model.add(BatchNormalizationV1())
+        model.add(Conv2D(512, kernel_size=5, strides=2, padding="same"))
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Flatten())
         model.add(Dense(1))
 
-        model.summary(line_length=200)
         return model
 
     def build_gan(self, generator, discriminator):
+        generator.summary(line_length=200)
+        discriminator.summary(line_length=200)
         model = Sequential([generator, discriminator])
         return model
 
@@ -108,10 +106,10 @@ class PokemonExperiment(Experiment):
         schedule[0, 100000] = MutableHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
-            batch_size=256,
+            batch_size=32,
             adam_b1=0.5,
             iterations=100000,
-            sample_interval=20,
+            sample_interval=10,
             discriminator_turns=1,
             generator_turns=1,
             checkpoint_interval=400,
@@ -143,7 +141,7 @@ class PokemonExperiment(Experiment):
 
         return HyperParams(
             latent_dim=100,
-            img_shape=(64, 64, 3),
+            img_shape=(128, 128, 3),
             weight_path=f"{base_dir}/{name}/weights",
             checkpoint_path=f"{base_dir}/{name}/checkpoints",
             prediction_path=f"{base_dir}/{name}/predictions",
