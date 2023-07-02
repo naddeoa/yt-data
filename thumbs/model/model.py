@@ -30,7 +30,7 @@ class Model(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def build_gan(self, generator, discriminator):
+    def build_gan(self, generator, discriminator) -> Optional[tf.keras.Model]:
         raise NotImplementedError()
 
     def build(self) -> BuiltModel:
@@ -50,7 +50,8 @@ class Model(ABC):
         discriminator.trainable = False
         gan = self.build_gan(generator, discriminator)
         generator_optimizer = Adam(learning_rate=self.mparams.gen_learning_rate, beta_1=self.mparams.adam_b1)
-        gan.compile(loss=self.loss, optimizer=generator_optimizer)
+        if gan is not None:
+            gan.compile(loss=self.loss, optimizer=generator_optimizer)
         discriminator.trainable = True
 
         return BuiltModel(

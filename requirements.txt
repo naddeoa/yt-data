@@ -61,8 +61,10 @@ nest-asyncio==1.5.6
 networkx==3.0
 numpy==1.23.5
 oauthlib==3.2.2
+opencv-python==4.7.0.72
 opt-einsum==3.3.0
 packaging==23.1
+pandas==2.0.3
 parso==0.8.3
 pathspec==0.11.1
 pexpect==4.8.0
@@ -79,6 +81,7 @@ pyasn1-modules==0.3.0
 Pygments==2.15.1
 pyparsing==3.0.9
 python-dateutil==2.8.2
+pytz==2023.3
 PyWavelets==1.4.1
 PyYAML==6.0
 pyzmq==25.1.0
@@ -97,6 +100,7 @@ sympy==1.11.1
 tensorboard==2.12.3
 tensorboard-data-server==0.7.0
 tensorflow==2.12.0
+tensorflow-addons==0.20.0
 tensorflow-estimator==2.12.0
 tensorflow-io-gcs-filesystem==0.32.0
 termcolor==2.3.0
@@ -112,11 +116,13 @@ tqdm==4.65.0
 traitlets==5.9.0
 transformers==4.29.2
 triton==2.0.0
+typeguard==2.13.3
 types-protobuf==4.23.0.1
 types-requests==2.31.0.0
 types-tensorflow==2.12.0.4
 types-urllib3==1.26.25.13
 typing-extensions==4.6.2
+tzdata==2023.3
 uritemplate==4.1.1
 urllib3==1.26.16
 wcwidth==0.2.6

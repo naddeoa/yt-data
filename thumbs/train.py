@@ -97,15 +97,20 @@ class Train(ABC):
 
 
     @abstractmethod
-    def train_discriminator(self, gen_imgs, real_imgs):
+    def train_discriminator(self, gen_imgs, real_imgs, labels=None):
         raise NotImplementedError()
 
     @abstractmethod
-    def train_generator(self, z):
+    def train_generator(self, z, labels=None):
         raise NotImplementedError()
 
     def train(self, dataset: tf.data.Dataset, start_iter=0):
-        load_weights(self.gan, self.params.weight_path)
+        if self.gan is not None:
+            load_weights(self.gan, self.params.weight_path)
+        else:
+            load_weights(self.generator, f'{self.params.weight_path}_gen')
+            load_weights(self.discriminator, f'{self.params.weight_path}_dis')
+
 
         accuracies_rf = []
         loss_dg: List[Tuple[float, float]] = []
@@ -123,14 +128,34 @@ class Train(ABC):
         )
         for iteration in progress:
             # Google colab can't handle two progress bars, so overwrite the epoch one each time.
-            for imgs in tqdm(dataset, position=1 if not is_colab() else 0, leave=False if not is_colab() else True, desc="batch"):
+            for item in tqdm(dataset, position=1 if not is_colab() else 0, leave=False if not is_colab() else True, desc="batch"):
+                if isinstance(item, tuple):
+                    imgs, labels = item
+                else:
+                    imgs = item
+                    labels = None
+
                 # -------------------------
                 #  Train the Discriminator
                 # -------------------------
                 # Generate a batch of fake images
-                for _ in range(self.mparams.discriminator_turns):
+                for d_turn in range(self.mparams.discriminator_turns):
+                    cur_imgs = imgs
+                    cur_labels = labels
+
                     z = np.random.normal(0, 1, (self.mparams.batch_size, self.params.latent_dim))
-                    gen_imgs = self.generator.predict(z, verbose=0)
+                    gen_input = z if cur_labels is None else [z, cur_labels]
+                    gen_imgs = self.generator.predict(gen_input , verbose=0)
+
+                    if d_turn > 0:
+                        # Get a new random shuffle from the dataset for multiple turns
+                        next_imgs = dataset.__iter__().__next__()
+                        if isinstance(next_imgs, tuple):
+                            cur_imgs, cur_labels = next_imgs 
+                        else:
+                            cur_imgs = next_imgs
+                            cur_labels = None
+
                     (
                         d_loss,
                         d_loss_fake,
@@ -138,7 +163,7 @@ class Train(ABC):
                         d_acc,
                         d_fake_acc,
                         d_real_acc,
-                    ) = self.train_discriminator(gen_imgs, imgs)
+                    ) = self.train_discriminator(gen_imgs, cur_imgs, cur_labels)
 
                 # ---------------------
                 #  Train the Generator
@@ -146,7 +171,8 @@ class Train(ABC):
                 # gen_imgs = self.generator.predict(z, verbose=0)
                 for _ in range(self.mparams.generator_turns):
                     z = np.random.normal(0, 1, (self.mparams.batch_size, self.params.latent_dim))
-                    g_loss = self.train_generator(z)
+                    # TODO make the generator get new labels on each iteration too, but I may never train the generator > 1 anyway
+                    g_loss = self.train_generator(z, labels)
 
                 postfix = {
                     "d_loss": trunc(d_loss),
@@ -187,19 +213,33 @@ class Train(ABC):
 
         if checkpoint_path is not None and checkpoint_interval is not None and (iteration) % checkpoint_interval == 0:
             save_iterations(f"{checkpoint_path}/{iteration}/iteration", iteration)
-            self.gan.save_weights(f"{checkpoint_path}/{iteration}/weights")
+            if self.gan is not None:
+                self.gan.save_weights(f"{checkpoint_path}/{iteration}/weights")
+            else:
+                self.generator.save_weights(f"{checkpoint_path}/{iteration}/weights_gen")
+                self.discriminator.save_weights(f"{checkpoint_path}/{iteration}/weights_dis")
+
+            loss_file_name = self.params.loss_path.split("/")[-1]
+            save_as_json(self.losses, f"{checkpoint_path}/{iteration}/{loss_file_name}")
+            iter_checkpoint_file_name = self.params.iteration_checkpoints_path.split("/")[-1]
+            save_as_json(self.iteration_checkpoints, f"{checkpoint_path}/{iteration}/{iter_checkpoint_file_name}")
+
 
         if (iteration) % sample_interval == 0:
             # Save losses and accuracies so they can be plotted after training
-            self.gan.save_weights(self.params.weight_path)
+            if self.gan is not None:
+                self.gan.save_weights(self.params.weight_path)
+            else:
+                self.generator.save_weights(f'{self.params.weight_path}_gen')
+                self.discriminator.save_weights(f'{self.params.weight_path}_dis')
             save_iterations(self.params.iteration_path, iteration)
 
             self.losses.append(np.mean(loss_dg, axis=0).tolist())
             self.accuracies_rf.append(np.mean(accuracies_rf, axis=0).tolist())
             self.iteration_checkpoints.append(iteration)
 
+            # save_as_json(self.accuracies, self.params.accuracy_path)
             save_as_json(self.losses, self.params.loss_path)
-            save_as_json(self.accuracies, self.params.accuracy_path)
             save_as_json(self.iteration_checkpoints, self.params.iteration_checkpoints_path)
 
             file_name = str(iteration)
@@ -218,18 +258,12 @@ class Train(ABC):
 
             # most recent data only
             show_loss_plot(
-                self.losses[-100:],
-                self.iteration_checkpoints[-100:],
+                self.losses[-50:],
+                self.iteration_checkpoints[-50:],
                 dir=self.params.prediction_path,
                 file_name='zoom',
                 save_as_latest=False
             )
-            #show_accuracy_plot(
-            #    self.accuracies_rf,
-            #    self.iteration_checkpoints,
-            #    dir=self.params.prediction_path,
-            #    file_name=file_name,
-            #)
 
             return True
         else:
@@ -241,7 +275,7 @@ class TrainWassersteinGP(Train):
         super().__init__(built_model, params, mparams)
         self.loss = Loss(params)
 
-    def gradient_penalty(self, real_images, fake_images):
+    def gradient_penalty(self, real_images, fake_images, labels=None):
         """Calculates the gradient penalty.
 
         This loss is calculated on an interpolated image
@@ -257,7 +291,8 @@ class TrainWassersteinGP(Train):
         with tf.GradientTape() as gp_tape:
             gp_tape.watch(interpolated)
             # 1. Get the discriminator output for this interpolated image.
-            pred = self.discriminator(interpolated, training=True)
+            disc_input = interpolated if labels is None else [interpolated, labels]
+            pred = self.discriminator(disc_input, training=True)
 
         # 2. Calculate the gradients w.r.t to this interpolated image.
         grads = gp_tape.gradient(pred, [interpolated])[0]
@@ -273,17 +308,19 @@ class TrainWassersteinGP(Train):
 
 
     @tf.function
-    def train_discriminator(self, gen_imgs, real_imgs):
+    def train_discriminator(self, gen_imgs, real_imgs, labels):
         # Get the latent vector
         with tf.GradientTape() as tape:
             # Get the logits for the fake images
-            fake_logits = self.discriminator(gen_imgs, training=True)
+            disc_gen_inputs = gen_imgs if labels is None else [gen_imgs, labels]
+            fake_logits = self.discriminator(disc_gen_inputs, training=True)
             # Get the logits for the real images
-            real_logits = self.discriminator(real_imgs, training=True)
+            disc_real_inputs = real_imgs if labels is None else [real_imgs, labels]
+            real_logits = self.discriminator(disc_real_inputs, training=True)
             # Calculate the discriminator loss using the fake and real image logits
             d_cost = self.discriminator_loss(real_img=real_logits, fake_img=fake_logits)
             # Calculate the gradient penalty
-            gp = self.gradient_penalty(real_imgs, gen_imgs)
+            gp = self.gradient_penalty(real_imgs, gen_imgs, labels)
             # Add the gradient penalty to the original discriminator loss
             d_loss = d_cost + (gp * self.mparams.gradient_penalty_factor)
 
@@ -300,12 +337,14 @@ class TrainWassersteinGP(Train):
         return -tf.reduce_mean(fake_img)
 
     @tf.function
-    def train_generator(self, z):
+    def train_generator(self, z, labels):
         with tf.GradientTape() as tape:
             # Generate fake images using the generator
-            generated_images = self.generator(z, training=True)
+            generator_input = z if labels is None else [z, labels]
+            generated_images = self.generator(generator_input , training=True)
             # Get the discriminator logits for fake images
-            gen_img_logits = self.discriminator(generated_images, training=True)
+            discrim_input = generated_images if labels is None else [generated_images, labels]
+            gen_img_logits = self.discriminator(discrim_input, training=True)
             # Calculate the generator loss
             g_loss = self.generator_loss(gen_img_logits)
 

@@ -13,6 +13,7 @@ from thumbs.model.model import Model, BuiltModel
 
 from keras.models import Sequential
 from keras.layers import Dense, Reshape, Conv2DTranspose, Flatten, LeakyReLU
+
 from keras.layers import (
     Activation,
     BatchNormalization,
@@ -38,50 +39,49 @@ from thumbs.train import Train, TrainMSE, TrainBCE, TrainBCESimilarity, TrainWas
 
 infinity = float("inf")
 
-
-ngf = 128 
-ndf = 128 
-
-
+ngf = 64 
+ndf = 64 + 32
 
 class PokemonModel(Model):
     def build_generator(self, z_dim):
-        n_hidden_layers = 6
         model = Sequential(name="generator")
 
-        # model.add(Dense(1024* 8 * 8, input_dim=z_dim))
-        # model.add(Reshape((8, 8, 1024)))
         model.add(Reshape((1, 1, z_dim), input_shape=(z_dim,)))
+        model.add(Conv2DTranspose(ngf*4, kernel_size=6, strides=6, padding='valid'))
 
-        # get 6 numbers from an interpolate between 1 4
-        for f in np.linspace(4, 1, n_hidden_layers):
-            model.add(Conv2DTranspose(ngf*f, kernel_size=5, strides=2, padding="same"))
-            if f != 4:
-                # Don't normalize the first layerlayer
-                model.add(BatchNormalization())
-            model.add(ReLU())
+        model.add(Conv2DTranspose(ngf*3, kernel_size=5, strides=5, padding='valid'))
+        model.add(BatchNormalization())
+        model.add(LeakyReLU())
 
-        model.add(Conv2DTranspose(3, kernel_size=5, strides=2, padding="same"))
+        model.add(Conv2DTranspose(ngf*2, kernel_size=5, strides=2, padding='valid'))
+        model.add(BatchNormalization())
+        model.add(LeakyReLU())
+
+        model.add(Conv2DTranspose(ngf, kernel_size=2, strides=1, padding='valid'))
+        model.add(BatchNormalization())
+        model.add(LeakyReLU())
+
+        model.add(Conv2DTranspose(3, kernel_size=2, strides=2, padding="valid"))
         model.add(Activation("tanh"))
 
         return model
 
-
-
     def build_discriminator(self, img_shape):
         model = Sequential(name="discriminator")
-        model.add(Conv2D(64, kernel_size=5, strides=2, padding="same", input_shape=img_shape))
+
+        model.add(Conv2D(ndf, kernel_size=2, strides=2,  input_shape=img_shape))
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(128, kernel_size=5, strides=2, padding="same"))
+        model.add(Conv2D(ndf*2, kernel_size=2, strides=1))
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(256, kernel_size=5, strides=2, padding="same"))
+        model.add(Conv2D(ndf*3, kernel_size=5, strides=2))
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(512, kernel_size=5, strides=2, padding="same"))
+        model.add(Conv2D(ndf*4, kernel_size=5, strides=5))
         model.add(LeakyReLU(alpha=0.2))
 
+        model.add(Conv2D(ndf*5, kernel_size=6, strides=6))
         model.add(Flatten())
         model.add(Dense(1))
 
@@ -103,9 +103,22 @@ class PokemonExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 100000] = MutableHyperParams(
+        schedule[0, 4420] = MutableHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
+            batch_size=32,
+            adam_b1=0.5,
+            iterations=4420,
+            sample_interval=10,
+            discriminator_turns=1,
+            generator_turns=1,
+            checkpoint_interval=400,
+            gradient_penalty_factor=20
+        )
+
+        schedule[4421, 100000] = MutableHyperParams(
+            gen_learning_rate=0.002,
+            dis_learning_rate=0.002,
             batch_size=32,
             adam_b1=0.5,
             iterations=100000,
@@ -113,7 +126,7 @@ class PokemonExperiment(Experiment):
             discriminator_turns=1,
             generator_turns=1,
             checkpoint_interval=400,
-            gradient_penalty_factor=10
+            gradient_penalty_factor=20
         )
 
         return schedule
@@ -131,7 +144,7 @@ class PokemonExperiment(Experiment):
         return image
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_big_2"
+        name = "pokemon_artisinal_disc"
 
         exp_dir = 'EXP_DIR'
         if exp_dir in os.environ:

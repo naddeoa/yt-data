@@ -1,7 +1,7 @@
 import thumbs.config_logging  # must be first
 import tensorflow as tf
 import os
-from typing import List, Tuple, Iterator
+from typing import List, Tuple, Iterator, Optional, Union
 from rangedict import RangeDict
 import numpy as np
 
@@ -38,11 +38,8 @@ from thumbs.train import Train, TrainMSE, TrainBCE, TrainBCESimilarity, TrainWas
 
 infinity = float("inf")
 
-
 ngf = 64 
 ndf = 64
-
-
 
 class PokemonModel(Model):
     def build_generator(self, z_dim):
@@ -103,12 +100,12 @@ class PokemonExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 100000] = MutableHyperParams(
+        schedule[0, 4000] = MutableHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
             batch_size=32,
             adam_b1=0.5,
-            iterations=100000,
+            iterations=4000,
             sample_interval=20,
             discriminator_turns=1,
             generator_turns=1,
@@ -116,9 +113,35 @@ class PokemonExperiment(Experiment):
             gradient_penalty_factor=20
         )
 
+        schedule[4001, 4300] = MutableHyperParams(
+            gen_learning_rate=0.0002,
+            dis_learning_rate=0.00002,
+            batch_size=32,
+            adam_b1=0.5,
+            iterations=4300,
+            sample_interval=10,
+            discriminator_turns=10,
+            generator_turns=1,
+            checkpoint_interval=200,
+            gradient_penalty_factor=20
+        )
+
+        schedule[4301, 100000] = MutableHyperParams(
+            gen_learning_rate=0.001,
+            dis_learning_rate=0.001,
+            batch_size=32,
+            adam_b1=0.5,
+            iterations=100000,
+            sample_interval=10,
+            discriminator_turns=1,
+            generator_turns=1,
+            checkpoint_interval=200,
+            gradient_penalty_factor=10
+        )
+
         return schedule
 
-    def custom_agumentation(self, image: tf.Tensor) -> tf.Tensor:
+    def custom_agumentation(self, image: tf.Tensor, labels: Optional[tf.Tensor] = None) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
         """
         No zoom for this dataset since the pokemon are much closer to the edge of the frame
         """

@@ -1,9 +1,11 @@
 import json
 import matplotlib.pyplot as plt
+import pandas as pd
+from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.decomposition import PCA
 from tqdm.auto import tqdm
 import PIL
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 import os
 from thumbs.util import is_notebook
 from thumbs.viz import visualize_preprocessed_image, visualize_image_scatter, visualize_thumbnails
@@ -33,6 +35,35 @@ def load_and_preprocess_image(img_path, size: Tuple[int, int, int], file_type: s
     img_array = (img_array.astype("float32") - 127.5) / 127.5
     return img_array
 
+
+def get_cat_data(
+    size: Tuple[int, int, int] = (128, 128, 3),
+) -> np.ndarray:
+    data_dir = '/mnt/e/data/afhq/train/cat'
+
+    print(f"Images in {data_dir}")
+    file_list = os.listdir(data_dir)
+    print(file_list[:10])
+    print(f"Found {len(file_list)} total files")
+    jpg_file_list = [ file for file in file_list if file.endswith(".jpg") or file.endswith('.jpeg') ]
+
+    print(f"Found {len(jpg_file_list)} jpgs")
+
+    jpgs = [
+        load_and_preprocess_image(f"{data_dir}/{img_path}", size)
+        for img_path in tqdm(jpg_file_list)
+    ]
+
+    images = np.array(jpgs)
+    print(f'Shape of images: {images.shape}')
+
+    if is_notebook():
+        # Make sure the preprocessing worked
+        for image in images[:2]:
+            visualize_preprocessed_image(image)
+        visualize_image_scatter(images)
+
+    return images
 
 
 def get_pokemon_data(
@@ -229,3 +260,70 @@ def get_pokemon_data256(
         visualize_image_scatter(images)
 
     return images
+
+
+def get_pokemon_and_types(
+    size: Tuple[int, int, int] = (128, 128, 3),
+    drop_megas = True # need to manually label
+) -> Tuple[List[Tuple[np.ndarray, List[str]]], List[str]] :
+    """
+    Gets the dataset of pokemon, which is a list of [image as ndarray, types as List[str]]
+    Also gets all of the possible pokemon types as the second return value
+    """
+    data_dir = "/home/anthony/workspace/yt-data/data/pokemon"
+    print(f"Images in {data_dir}")
+    file_list = os.listdir(data_dir)
+    print(file_list[:10])
+    print(f"Found {len(file_list)} total files")
+    jpg_file_list = [ file for file in file_list if file.endswith(".jpg") or file.endswith('.jpeg') ]
+    print(f"Found {len(jpg_file_list)} jpgs")
+
+    # Get type/stat info
+    df = pd.read_csv('/home/anthony/workspace/yt-data/data/pokemon/stats.csv')
+    df = df.drop_duplicates(subset=['#'])
+    types: List[str] = list(set(df['Type 1'].unique().tolist() + df['Type 2'].unique().tolist()))
+    types = [type.lower() for type in types if type == type] # remove nan
+    types.sort()
+
+    # Can lookup the type info given a pokedex number
+    pokemon_types = {}
+    for index, row in df.iterrows():
+        type1 = row['Type 1'].lower()
+        type2 = row['Type 2']
+        both_types = [type1]
+        if type2 == type2:
+            both_types.append(type2.lower())
+
+        pokemon_types[row['#']] = both_types
+
+
+    def get_pokedex_num(name):
+        # each name starts with some number of digits.  Find them all
+        # and return them as a string
+        numbers = []
+        for c in name:
+            if c.isdigit():
+                numbers.append(c)
+            else:
+                break
+        return int("".join(numbers))
+
+    jpgs = [
+        (load_and_preprocess_image(f"{data_dir}/{img_path}", size), pokemon_types[get_pokedex_num(img_path)])
+        for img_path in tqdm(jpg_file_list)
+        if "-" not in img_path and drop_megas  # Drop mega evolutions and visual variants for now
+    ]
+
+
+    if is_notebook():
+        # Get 36 random images
+        # get vector of 36 random ints between 0 and len(images)
+        images = np.asarray(jpgs, dtype=object)
+        just_images = images[:, 0]
+        ids = np.random.choice(len(images), 36)
+        random_images = just_images[ids]
+        visualize_thumbnails(random_images, rows=6, cols=6, dir='/tmp', file_name='preview.jpg')
+        visualize_image_scatter(just_images )
+
+    return jpgs, types 
+
