@@ -137,13 +137,11 @@ class PokemonExperiment(Experiment):
         super().__init__()
         data, types = get_pokemon_and_types(self.params.img_shape)
         self.vocab = types
-        # Map the second item in the tuples of self.data from a list of type strings to the multi hot encoding via lookup
         self.lookup = StringLookup(output_mode='multi_hot', name='string_lookup_gen', vocabulary=self.vocab)
 
         self.images = np.array([x[0] for x in data])
         self.labels = np.array([self.lookup(item[1]).numpy() for item in data])
 
-        self.data = [[item[0], self.lookup(item[1]).numpy()] for item in data]
         self.zoom_factor = .9
 
 
@@ -164,7 +162,12 @@ class PokemonExperiment(Experiment):
         return self.images, self.labels
 
     def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
-        return TrainWassersteinGP(model, self.params, mparams)
+
+        def label_getter(n: int):
+            # get n random samples from self.labels
+            return self.labels[np.random.randint(0, len(self.labels), n)]
+
+        return TrainWassersteinGP(model, self.params, mparams, label_getter)
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()

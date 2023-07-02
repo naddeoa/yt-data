@@ -7,7 +7,7 @@ from thumbs.util import get_current_time, is_colab
 from thumbs.viz import show_accuracy_plot, show_loss_plot, show_samples
 from thumbs.params import HyperParams, MutableHyperParams
 from thumbs.loss import Loss
-from typing import Iterable, List, Optional, Tuple, Any, Optional
+from typing import Iterable, List, Optional, Tuple, Any, Optional, Callable
 from abc import ABC, abstractmethod
 import pathlib
 import os
@@ -66,10 +66,13 @@ def load_weights(gan, weight_path: str):
         print(e)
 
 
+LabelGetter = Optional[Callable[[int], np.ndarray]]
 class Train(ABC):
-    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams) -> None:
+    # label_getter is a function that takes a number and returns an array of np.ndarray
+    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams, label_getter: LabelGetter  = None) -> None:
         self.gan = built_model.gan
         self.mparams = mparams
+        self.label_getter = label_getter
         self.generator = built_model.generator
         self.discriminator = built_model.discriminator
         self.discriminator_optimizer  = built_model.discriminator_optimizer
@@ -248,6 +251,7 @@ class Train(ABC):
                 self.params.latent_dim,
                 file_name=file_name,
                 dir=self.params.prediction_path,
+                label_getter=self.label_getter,
             )
             show_loss_plot(
                 self.losses,
@@ -271,8 +275,8 @@ class Train(ABC):
 
 
 class TrainWassersteinGP(Train):
-    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams) -> None:
-        super().__init__(built_model, params, mparams)
+    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams, label_getter: LabelGetter = None) -> None:
+        super().__init__(built_model, params, mparams, label_getter )
         self.loss = Loss(params)
 
     def gradient_penalty(self, real_images, fake_images, labels=None):

@@ -184,8 +184,12 @@ def visualize_thumbnails(image_list, rows, cols, dir, file_name):
     plt.close()
 
 
-def show_samples(generator, latent_dim, file_name, dir: str, rows=6, cols=6, dataset=None):
+def show_samples(generator, latent_dim, file_name, dir: str, rows=6, cols=6, label_getter=None):
     # noise = np.random.uniform(-1, 1, size=(rows * cols, latent_dim))
     noise = np.random.normal(0, 1, (rows * cols, latent_dim))
-    generated_thumbnails = generator.predict(noise, verbose=0)
+    if label_getter is not None:
+        labels = label_getter(rows * cols)
+        generated_thumbnails = generator.predict([noise, labels], verbose=0)
+    else:
+        generated_thumbnails = generator.predict(noise, verbose=0)
     visualize_thumbnails(generated_thumbnails, rows, cols, dir, file_name)

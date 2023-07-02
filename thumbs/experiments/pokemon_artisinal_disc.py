@@ -1,7 +1,7 @@
 import thumbs.config_logging  # must be first
 import tensorflow as tf
 import os
-from typing import List, Tuple, Iterator
+from typing import List, Tuple, Iterator, Optional, Union
 from rangedict import RangeDict
 import numpy as np
 
@@ -131,7 +131,7 @@ class PokemonExperiment(Experiment):
 
         return schedule
 
-    def custom_agumentation(self, image: tf.Tensor) -> tf.Tensor:
+    def custom_agumentation(self, image: tf.Tensor, labels: Optional[tf.Tensor] = None) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
         """
         No zoom for this dataset since the pokemon are much closer to the edge of the frame
         """
