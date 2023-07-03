@@ -1,3 +1,4 @@
+import numpy as np
 from datetime import datetime
 
 
@@ -32,3 +33,16 @@ def get_current_time() -> str:
     now = datetime.now()
     # return now.strftime("%Y-%m-%d_%I-%M_%p")
     return now.strftime("%Y-%m-%d %H-%M")
+
+
+def normalize_image(img_array: np.ndarray) -> np.ndarray:
+    """
+    Normalize from [0, 255] to [-1, 1]
+    """
+    return (img_array.astype("float32") - 127.5) / 127.5
+
+def unnormalize_image(image):
+    # This scales it back up to the range [0, 255]. It looks a little different
+    # rendered from here than it does from -1,1
+    image = (image + 1) * 127.5
+    return image.astype(np.uint8)

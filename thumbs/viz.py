@@ -9,6 +9,7 @@ from functools import partial
 from PIL import Image
 import numpy as np
 from thumbs.util import is_notebook, get_current_time
+from thumbs.util import normalize_image, unnormalize_image
 from datetime import datetime
 
 
@@ -132,15 +133,10 @@ def visualize_image_scatter(images):
 #         plt.close()
 
 
-def process_prediction_image(image):
-    # This scales it back up to the range [0, 255]. It looks a little different
-    # rendered from here than it does from -1,1
-    image = (image + 1) * 127.5
-    return image.astype(np.uint8)
 
 
 def visualize_preprocessed_image(image, size=None):
-    image = process_prediction_image(image)
+    image = unnormalize_image(image)
 
     if size is not None:
         plt.figure(figsize=size)  # Set the figure size to be 10 inches wide and 5 inches tall
@@ -161,7 +157,7 @@ def visualize_thumbnails(image_list, rows, cols, dir, file_name):
     image_list = list(image_list)
     for row in range(rows):
         for col in range(cols):
-            image = process_prediction_image(image_list.pop())
+            image = unnormalize_image(image_list.pop())
             if rows == 1:
                 axs[col].imshow(image)
                 axs[col].axis("off")

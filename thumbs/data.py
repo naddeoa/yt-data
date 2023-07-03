@@ -11,6 +11,7 @@ from thumbs.util import is_notebook
 from thumbs.viz import visualize_preprocessed_image, visualize_image_scatter, visualize_thumbnails
 import numpy as np
 from PIL import Image
+from thumbs.util import normalize_image, unnormalize_image
 
 
 #
@@ -31,9 +32,7 @@ def load_and_preprocess_image(img_path, size: Tuple[int, int, int], file_type: s
     if len(img_array.shape) == 2:
         img_array = np.repeat(img_array[:, :, np.newaxis], 3, axis=2)
 
-    # Normalize from [0, 255] to [-1, 1]
-    img_array = (img_array.astype("float32") - 127.5) / 127.5
-    return img_array
+    return normalize_image(img_array)
 
 
 def get_cat_data(

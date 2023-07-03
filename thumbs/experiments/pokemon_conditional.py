@@ -44,8 +44,8 @@ from thumbs.train import Train, TrainMSE, TrainBCE, TrainBCESimilarity, TrainWas
 
 infinity = float("inf")
 
-ngf = 64 
-ndf = 64
+ngf = 128
+ndf = 128
 
 class TileLayer(tf.keras.layers.Layer):
   def __init__(self, tiles):
@@ -64,7 +64,7 @@ class PokemonModel(Model):
     def __init__(self, params: HyperParams, mparams: MutableHyperParams, vocab: List[str]) -> None:
         super().__init__(params, mparams)
         # self.vocab = vocab
-        self.num_classes = 19 # 18 pokemon types plus an OOV token
+        self.num_classes = len(vocab) + 1 # 18 pokemon types plus an OOV token
 
     def build_generator(self, z_dim):
         noise_input = Input(shape=(z_dim,))
@@ -74,24 +74,26 @@ class PokemonModel(Model):
 
         # Preprocessing 
         # types = lookup(types_input)
-        model_input = Concatenate(axis=-1)([noise_input, types_input]) # Might need axis=-1, but it looks like tf makes it work out
+        x = Concatenate(axis=-1)([noise_input, types_input]) # Might need axis=-1, but it looks like tf makes it work out
 
-        x = Reshape((1, 1, z_dim + self.num_classes))(model_input)
-        x = Conv2DTranspose(ngf*4, kernel_size=6, strides=6, padding='valid')(x)
+        # x = Reshape((1, 1, z_dim + self.num_classes))(model_input)
+        x = Dense(8*8*ngf*4)(x)
+        x = Reshape((8, 8, ngf*4))(x)
+        # x = Conv2DTranspose(ngf*4, kernel_size=6, strides=6, padding='valid')(x)
 
-        x = Conv2DTranspose(ngf*3, kernel_size=5, strides=5, padding='valid')(x)
+        x = Conv2DTranspose(ngf*3, kernel_size=5, strides=2, padding='same')(x)
         x = BatchNormalization()(x)
         x = LeakyReLU()(x)
 
-        x = Conv2DTranspose(ngf*2, kernel_size=5, strides=2, padding='valid')(x)
+        x = Conv2DTranspose(ngf*2, kernel_size=5, strides=2, padding='same')(x)
         x = BatchNormalization()(x)
         x = LeakyReLU()(x)
 
-        x = Conv2DTranspose(ngf, kernel_size=2, strides=1, padding='valid')(x)
+        x = Conv2DTranspose(ngf, kernel_size=5, strides=2, padding='same')(x)
         x = BatchNormalization()(x)
         x = LeakyReLU()(x)
 
-        x = Conv2DTranspose(3, kernel_size=2, strides=2, padding="valid")(x)
+        x = Conv2DTranspose(3, kernel_size=5, strides=2, padding="same")(x)
         x = Activation("tanh")(x)
 
         model = tf.keras.Model([noise_input, types_input], x, name="generator")
@@ -106,17 +108,18 @@ class PokemonModel(Model):
         types_input_x = TileLayer(( 1, 128, 128, 1 ))(types_input_x)
 
         model_input = Concatenate(axis=-1)([image_input , types_input_x])
-
-        x = Conv2D(64, kernel_size=5, strides=2, padding="same")(model_input)
+        # TODO stop using bias
+        # , use_bias=False
+        x = Conv2D(ndf, kernel_size=5, strides=2, padding="same")(model_input)
         x = LeakyReLU(alpha=0.2)(x)
 
-        x = Conv2D(128, kernel_size=5, strides=2, padding="same")(x)
+        x = Conv2D(ndf*2, kernel_size=5, strides=2, padding="same")(x)
         x = LeakyReLU(alpha=0.2)(x)
 
-        x = Conv2D(256, kernel_size=5, strides=2, padding="same")(x)
+        x = Conv2D(ndf*4, kernel_size=5, strides=2, padding="same")(x)
         x = LeakyReLU(alpha=0.2)(x)
 
-        x = Conv2D(512, kernel_size=5, strides=2, padding="same")(x)
+        x = Conv2D(ndf*8, kernel_size=5, strides=2, padding="same")(x)
         x = LeakyReLU(alpha=0.2)(x)
 
         x = Flatten()(x)
@@ -148,6 +151,7 @@ class PokemonExperiment(Experiment):
         # Can lookup the type info given a pokedex number
         df = pd.read_csv('/home/anthony/workspace/yt-data/data/pokemon/stats.csv')
         df = df.drop_duplicates(subset=['#'])
+        self.df = df
         self.id_to_types = {}
         for index, row in df.iterrows():
             type1 = row['Type 1'].lower()
@@ -161,13 +165,12 @@ class PokemonExperiment(Experiment):
     def get_data(self) -> Tuple[np.ndarray, np.ndarray]:
         return self.images, self.labels
 
+    def get_random_labels(self, n: int):
+        # get n random samples from self.labels
+        return self.labels[np.random.randint(0, len(self.labels), n)]
+
     def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
-
-        def label_getter(n: int):
-            # get n random samples from self.labels
-            return self.labels[np.random.randint(0, len(self.labels), n)]
-
-        return TrainWassersteinGP(model, self.params, mparams, label_getter)
+        return TrainWassersteinGP(model, self.params, mparams, self.get_random_labels)
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
@@ -177,10 +180,10 @@ class PokemonExperiment(Experiment):
             batch_size=32,
             adam_b1=0.5,
             iterations=100000,
-            sample_interval=20,
+            sample_interval=5,
             discriminator_turns=10,
             generator_turns=1,
-            checkpoint_interval=400,
+            checkpoint_interval=100,
             gradient_penalty_factor=20
         )
 

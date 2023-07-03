@@ -60,11 +60,11 @@ class Experiment(ABC):
             return image, labels
 
         image = tf.image.random_flip_left_right(image)
-        image = tf.keras.layers.experimental.preprocessing.RandomRotation(0.05)(image)
+        image = tf.keras.layers.RandomRotation(0.05)(image)
 
         # 10% zoom
         (x, y, channels) = self.params.img_shape
-        image = tf.image.random_crop(image, size=[int(x * self.zoom_factor ), int(y * self.zoom_factor ), channels])
+        image = tf.image.random_crop(image, size=[int(x * self.zoom_factor ), int(y * self.zoom_factor), channels])
         image = tf.image.resize(image, [x, y])
         return image, labels
 
