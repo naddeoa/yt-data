@@ -416,7 +416,7 @@ class TrainBCESimilarity(Train):
             generated_images = self.generator(z, training=True)
 
             # Get the discriminator's predictions on the fake images
-            fake_preds = self.discriminator(generated_images, training=False)
+            fake_preds = self.discriminator(generated_images, training=True)
 
             # Calculate the loss using the generator's output (generated_images)
             # and the discriminator's predictions (fake_preds)
@@ -424,6 +424,9 @@ class TrainBCESimilarity(Train):
 
         # Calculate the gradients of the loss with respect to the generator's weights
         grads = tape.gradient(loss, self.generator.trainable_weights)
+
+        if self.params.generator_clip_gradients_norm is not None:
+            grads = [tf.clip_by_norm(grad, self.params.generator_clip_gradients_norm) for grad in grads]
 
         # Update the weights of the generator
         self.generator_optimizer.apply_gradients(zip(grads, self.generator.trainable_weights))

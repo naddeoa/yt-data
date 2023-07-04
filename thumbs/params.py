@@ -15,6 +15,7 @@ class HyperParams:
     similarity_threshold: float  # = 0.0
     similarity_penalty: float  # = 10.0
     checkpoint_path: str  # = "./experiments/model_name/checkpoint"
+    generator_clip_gradients_norm: Optional[float] = None  # = None
 
 
 @dataclass

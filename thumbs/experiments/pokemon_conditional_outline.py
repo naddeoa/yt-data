@@ -73,17 +73,14 @@ class PokemonModel(Model):
         # Got a whole nother model in here just to downsample the outline enough to concat it with the noise
         outline = Conv2D(8, kernel_size=5, strides=2, padding="same", use_bias=False)(outline_input)
         outline = LeakyReLU()(outline)
-        outline = Dropout(.4)(outline)
 
         outline  = Conv2D(16, kernel_size=5, strides=2, padding="same", use_bias=False)(outline)
         outline = BatchNormalization()(outline )
         outline = LeakyReLU()(outline )
-        outline = Dropout(.4)(outline)
 
         outline  = Conv2D(32, kernel_size=5, strides=2, padding="same", use_bias=False)(outline)
         outline = BatchNormalization()(outline )
         outline = LeakyReLU()(outline )
-        outline = Dropout(.4)(outline)
 
         outline  = Conv2D(64, kernel_size=5, strides=2, padding="same", use_bias=False)(outline)
 
@@ -117,17 +114,20 @@ class PokemonModel(Model):
 
         outline_shape = (self.params.img_shape[0], self.params.img_shape[1], 1)
         outline_input = Input(shape=outline_shape)
-        outline = Dropout(.5)(outline_input)
+        outline = Dropout(.2)(outline_input)
 
         model_input = Concatenate(axis=-1)([image_input , outline])
         x = Conv2D(ndf, kernel_size=5, strides=2, padding="same", use_bias=False)(model_input)
         x = LeakyReLU(alpha=0.2)(x)
+        # outline = Dropout(.4)(outline_input)
 
         x = Conv2D(ndf*2, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
         x = LeakyReLU(alpha=0.2)(x)
+        # outline = Dropout(.4)(outline_input)
 
         x = Conv2D(ndf*4, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
         x = LeakyReLU(alpha=0.2)(x)
+        # outline = Dropout(.4)(outline_input)
 
         x = Conv2D(ndf*8, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
         x = LeakyReLU(alpha=0.2)(x)
@@ -153,7 +153,7 @@ class PokemonExperiment(Experiment):
 
     def get_data(self) -> Tuple[np.ndarray, np.ndarray]:
         # For each image, generate an outline
-        outlines = np.array([self.create_outline(image, threshold2=800) for image in self.images])
+        outlines = np.array([self.create_outline(image, threshold2=1000) for image in self.images])
         return (self.images, outlines)
 
     def get_random_labels(self, n: int):
@@ -172,20 +172,23 @@ class PokemonExperiment(Experiment):
         assert outline is not None
 
         # Create the outline
-        # outline = tf.numpy_function(self.create_outline, [image], tf.float32)
+        # Generate a shape 2 tensor with two random ints
+        seed = tf.random.uniform(shape=(2,), minval=0, maxval=10, dtype=tf.int32)
 
-        image = tf.image.random_flip_left_right(image)
-        outline = tf.image.random_flip_left_right(outline)
+        image = tf.image.stateless_random_flip_left_right(image, seed=seed)
+        outline = tf.image.stateless_random_flip_left_right(outline, seed=seed)
 
-        image = tf.keras.layers.RandomRotation(0.05)(image)
-        outline = tf.keras.layers.RandomRotation(0.05)(outline)
+        # Get another random int from numpy
+        seednp = np.random.randint(0, 10000)
+        image = tf.keras.layers.RandomRotation(0.05, seed=seednp)(image)
+        outline = tf.keras.layers.RandomRotation(0.05, seed=seednp)(outline)
 
         # 10% zoom
         (x, y, channels) = self.params.img_shape
-        image = tf.image.random_crop(image, size=[int(x * self.zoom_factor ), int(y * self.zoom_factor), channels])
+        image = tf.image.stateless_random_crop(image, size=[int(x * self.zoom_factor ), int(y * self.zoom_factor), channels], seed=seed)
         image = tf.image.resize(image, [x, y])
 
-        outline = tf.image.random_crop(outline, size=[int(x * self.zoom_factor ), int(y * self.zoom_factor), 1])
+        outline = tf.image.stateless_random_crop(outline, size=[int(x * self.zoom_factor ), int(y * self.zoom_factor), 1], seed=seed)
         outline = tf.image.resize(outline, [x, y])
 
         return image, outline
@@ -216,11 +219,11 @@ class PokemonExperiment(Experiment):
             batch_size=32,
             adam_b1=0.5,
             iterations=100000,
-            sample_interval=10,
-            discriminator_turns=2,
+            sample_interval=5,
+            discriminator_turns=5,
             generator_turns=1,
             checkpoint_interval=100,
-            gradient_penalty_factor=20
+            gradient_penalty_factor=10
         )
 
         return schedule
@@ -245,6 +248,7 @@ class PokemonExperiment(Experiment):
             accuracy_path=f"{base_dir}/{name}/accuracy",
             iteration_path=f"{base_dir}/{name}/iteration",
             similarity_threshold=0.0,
+            generator_clip_gradients_norm=1,
             similarity_penalty=20,
         )
 
