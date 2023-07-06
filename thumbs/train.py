@@ -172,10 +172,21 @@ class Train(ABC):
                 #  Train the Generator
                 # ---------------------
                 # gen_imgs = self.generator.predict(z, verbose=0)
-                for _ in range(self.mparams.generator_turns):
+                for g_turn in range(self.mparams.generator_turns):
+                    cur_imgs = imgs
+                    cur_labels = labels
                     z = np.random.normal(0, 1, (self.mparams.batch_size, self.params.latent_dim))
-                    # TODO make the generator get new labels on each iteration too, but I may never train the generator > 1 anyway
-                    g_loss = self.train_generator(z, labels)
+
+                    if g_turn > 0:
+                        # Get a new random shuffle from the dataset for multiple turns
+                        next_imgs = dataset.__iter__().__next__()
+                        if isinstance(next_imgs, tuple):
+                            cur_imgs, cur_labels = next_imgs 
+                        else:
+                            cur_imgs = next_imgs
+                            cur_labels = None
+
+                    g_loss = self.train_generator(z, cur_labels)
 
                 postfix = {
                     "d_loss": trunc(d_loss),
@@ -354,6 +365,9 @@ class TrainWassersteinGP(Train):
 
         # Get the gradients w.r.t the generator loss
         gen_gradient = tape.gradient(g_loss, self.generator.trainable_variables)
+
+        if self.params.generator_clip_gradients_norm is not None:
+            gen_gradient = [tf.clip_by_norm(grad, self.params.generator_clip_gradients_norm) for grad in gen_gradient]
         # Update the weights of the generator using the generator optimizer
         self.generator_optimizer.apply_gradients(
             zip(gen_gradient, self.generator.trainable_variables)
@@ -376,6 +390,7 @@ class TrainBCE(Train):
     def train_discriminator(self, gen_imgs, real_imgs):
         real = np.ones((self.mparams.batch_size, 1))
         fake = np.zeros((self.mparams.batch_size, 1))
+
         d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_imgs, real)
         d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(gen_imgs, fake)
         d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
@@ -393,30 +408,34 @@ class TrainBCESimilarity(Train):
     BCE with an additional loss based on cosine similarity
     """
 
-    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams) -> None:
-        super().__init__(built_model, params, mparams)
+    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams, label_getter: LabelGetter = None) -> None:
+        super().__init__(built_model, params, mparams, label_getter)
         self.loss = Loss(params)
 
-    def train_discriminator(self, gen_imgs, real_imgs):
+    def train_discriminator(self, gen_imgs, real_imgs, labels):
         real = np.ones((self.mparams.batch_size, 1))
         fake = np.zeros((self.mparams.batch_size, 1))
-        d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_imgs, real)
-        d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(gen_imgs, fake)
+        real_input = real_imgs if labels is None else [real_imgs, labels]
+        d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_input, real)
+        fake_input = gen_imgs if labels is None else [gen_imgs, labels]
+        d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(fake_input, fake)
         d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
         d_acc = 0.5 * np.add(d_real_acc, d_fake_acc)
         return d_loss, d_loss_fake, d_loss_real, d_acc, d_fake_acc, d_real_acc
 
     @tf.function
-    def train_generator(self, z):
+    def train_generator(self, z, labels):
         """
         Need a custom train loop for the generator because I want to factor in generators predictions
         """
         with tf.GradientTape() as tape:
             # Generate fake images using the generator
-            generated_images = self.generator(z, training=True)
+            generator_input = z if labels is None else [z, labels]
+            generated_images = self.generator(generator_input, training=True)
 
             # Get the discriminator's predictions on the fake images
-            fake_preds = self.discriminator(generated_images, training=True)
+            fake_input = generated_images if labels is None else [generated_images, labels]
+            fake_preds = self.discriminator(fake_input, training=True)
 
             # Calculate the loss using the generator's output (generated_images)
             # and the discriminator's predictions (fake_preds)
