@@ -34,14 +34,14 @@ def load_iterations(iteration_path: str) -> Optional[int]:
 
 
 def save_as_json(l: Any, path: str) -> None:
-    with open(path, 'w') as f:
+    with open(path, "w") as f:
         json.dump(l, f)
 
 
 def load_from_json(path: str) -> Optional[Any]:
     # load something that was serialized with save_as_json
     try:
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             return json.load(f)
     except Exception as e:
         return None
@@ -67,15 +67,17 @@ def load_weights(gan, weight_path: str):
 
 
 LabelGetter = Optional[Callable[[int], np.ndarray]]
+
+
 class Train(ABC):
     # label_getter is a function that takes a number and returns an array of np.ndarray
-    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams, label_getter: LabelGetter  = None) -> None:
+    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams, label_getter: LabelGetter = None) -> None:
         self.gan = built_model.gan
         self.mparams = mparams
         self.label_getter = label_getter
         self.generator = built_model.generator
         self.discriminator = built_model.discriminator
-        self.discriminator_optimizer  = built_model.discriminator_optimizer
+        self.discriminator_optimizer = built_model.discriminator_optimizer
         self.generator_optimizer = built_model.generator_optimizer
         self.params = params
         self.loss = Loss(params)
@@ -98,22 +100,20 @@ class Train(ABC):
         print(f"Restored iterations: {len(self.iteration_checkpoints)}")
         print("------------------------------------------------------------")
 
-
     @abstractmethod
     def train_discriminator(self, gen_imgs, real_imgs, labels=None):
         raise NotImplementedError()
 
     @abstractmethod
-    def train_generator(self, z, labels=None):
+    def train_generator(self, z, labels=None, cur_imgs=None):
         raise NotImplementedError()
 
     def train(self, dataset: tf.data.Dataset, start_iter=0):
         if self.gan is not None:
             load_weights(self.gan, self.params.weight_path)
         else:
-            load_weights(self.generator, f'{self.params.weight_path}_gen')
-            load_weights(self.discriminator, f'{self.params.weight_path}_dis')
-
+            load_weights(self.generator, f"{self.params.weight_path}_gen")
+            load_weights(self.discriminator, f"{self.params.weight_path}_dis")
 
         accuracies_rf = []
         loss_dg: List[Tuple[float, float]] = []
@@ -127,7 +127,12 @@ class Train(ABC):
             self.generator.compile()
 
         progress = tqdm(
-            range(start_iter, self.mparams.iterations + 1), total=self.mparams.iterations, initial=start_iter, position=0, leave=True, desc="epoch"
+            range(start_iter, self.mparams.iterations + 1),
+            total=self.mparams.iterations,
+            initial=start_iter,
+            position=0,
+            leave=True,
+            desc="epoch",
         )
         for iteration in progress:
             # Google colab can't handle two progress bars, so overwrite the epoch one each time.
@@ -148,13 +153,13 @@ class Train(ABC):
 
                     z = np.random.normal(0, 1, (self.mparams.batch_size, self.params.latent_dim))
                     gen_input = z if cur_labels is None else [z, cur_labels]
-                    gen_imgs = self.generator.predict(gen_input , verbose=0)
+                    gen_imgs = self.generator.predict(gen_input, verbose=0)
 
                     if d_turn > 0:
                         # Get a new random shuffle from the dataset for multiple turns
                         next_imgs = dataset.__iter__().__next__()
                         if isinstance(next_imgs, tuple):
-                            cur_imgs, cur_labels = next_imgs 
+                            cur_imgs, cur_labels = next_imgs
                         else:
                             cur_imgs = next_imgs
                             cur_labels = None
@@ -181,12 +186,12 @@ class Train(ABC):
                         # Get a new random shuffle from the dataset for multiple turns
                         next_imgs = dataset.__iter__().__next__()
                         if isinstance(next_imgs, tuple):
-                            cur_imgs, cur_labels = next_imgs 
+                            cur_imgs, cur_labels = next_imgs
                         else:
                             cur_imgs = next_imgs
                             cur_labels = None
 
-                    g_loss = self.train_generator(z, cur_labels)
+                    g_loss = self.train_generator(z, cur_labels, cur_imgs)
 
                 postfix = {
                     "d_loss": trunc(d_loss),
@@ -238,14 +243,13 @@ class Train(ABC):
             iter_checkpoint_file_name = self.params.iteration_checkpoints_path.split("/")[-1]
             save_as_json(self.iteration_checkpoints, f"{checkpoint_path}/{iteration}/{iter_checkpoint_file_name}")
 
-
         if (iteration) % sample_interval == 0:
             # Save losses and accuracies so they can be plotted after training
             if self.gan is not None:
                 self.gan.save_weights(self.params.weight_path)
             else:
-                self.generator.save_weights(f'{self.params.weight_path}_gen')
-                self.discriminator.save_weights(f'{self.params.weight_path}_dis')
+                self.generator.save_weights(f"{self.params.weight_path}_gen")
+                self.discriminator.save_weights(f"{self.params.weight_path}_dis")
             save_iterations(self.params.iteration_path, iteration)
 
             self.losses.append(np.mean(loss_dg, axis=0).tolist())
@@ -273,11 +277,7 @@ class Train(ABC):
 
             # most recent data only
             show_loss_plot(
-                self.losses[-50:],
-                self.iteration_checkpoints[-50:],
-                dir=self.params.prediction_path,
-                file_name='zoom',
-                save_as_latest=False
+                self.losses[-50:], self.iteration_checkpoints[-50:], dir=self.params.prediction_path, file_name="zoom", save_as_latest=False
             )
 
             return True
@@ -287,7 +287,7 @@ class Train(ABC):
 
 class TrainWassersteinGP(Train):
     def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams, label_getter: LabelGetter = None) -> None:
-        super().__init__(built_model, params, mparams, label_getter )
+        super().__init__(built_model, params, mparams, label_getter)
         self.loss = Loss(params)
 
     def gradient_penalty(self, real_images, fake_images, labels=None):
@@ -321,7 +321,6 @@ class TrainWassersteinGP(Train):
         fake_loss = tf.reduce_mean(fake_img)
         return fake_loss - real_loss
 
-
     @tf.function
     def train_discriminator(self, gen_imgs, real_imgs, labels):
         # Get the latent vector
@@ -342,21 +341,18 @@ class TrainWassersteinGP(Train):
         # Get the gradients w.r.t the discriminator loss
         d_gradient = tape.gradient(d_loss, self.discriminator.trainable_variables)
         # Update the weights of the discriminator using the discriminator optimizer
-        self.discriminator_optimizer.apply_gradients(
-            zip(d_gradient, self.discriminator.trainable_variables)
-        )
+        self.discriminator_optimizer.apply_gradients(zip(d_gradient, self.discriminator.trainable_variables))
         return d_loss, 0, 0, 0, 0, 0
-
 
     def generator_loss(self, fake_img):
         return -tf.reduce_mean(fake_img)
 
     @tf.function
-    def train_generator(self, z, labels):
+    def train_generator(self, z, labels, imgs):
         with tf.GradientTape() as tape:
             # Generate fake images using the generator
             generator_input = z if labels is None else [z, labels]
-            generated_images = self.generator(generator_input , training=True)
+            generated_images = self.generator(generator_input, training=True)
             # Get the discriminator logits for fake images
             discrim_input = generated_images if labels is None else [generated_images, labels]
             gen_img_logits = self.discriminator(discrim_input, training=True)
@@ -369,17 +365,8 @@ class TrainWassersteinGP(Train):
         if self.params.generator_clip_gradients_norm is not None:
             gen_gradient = [tf.clip_by_norm(grad, self.params.generator_clip_gradients_norm) for grad in gen_gradient]
         # Update the weights of the generator using the generator optimizer
-        self.generator_optimizer.apply_gradients(
-            zip(gen_gradient, self.generator.trainable_variables)
-        )
+        self.generator_optimizer.apply_gradients(zip(gen_gradient, self.generator.trainable_variables))
         return g_loss
-
-
-
-
-
-
-
 
 
 class TrainBCE(Train):
@@ -397,7 +384,7 @@ class TrainBCE(Train):
         d_acc = 0.5 * np.add(d_real_acc, d_fake_acc)
         return d_loss, d_loss_fake, d_loss_real, d_acc, d_fake_acc, d_real_acc
 
-    def train_generator(self, z):
+    def train_generator(self, z, imgs):
         real = np.ones((self.mparams.batch_size, 1))
         g_loss = self.gan.train_on_batch(z, real)
         return g_loss
@@ -413,8 +400,9 @@ class TrainBCESimilarity(Train):
         self.loss = Loss(params)
 
     def train_discriminator(self, gen_imgs, real_imgs, labels):
-        real = np.ones((self.mparams.batch_size, 1))
-        fake = np.zeros((self.mparams.batch_size, 1))
+        real = np.ones(self.mparams.discriminator_ones_zeroes_shape)
+        fake = np.zeros((self.mparams.discriminator_ones_zeroes_shape))
+
         real_input = real_imgs if labels is None else [real_imgs, labels]
         d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_input, real)
         fake_input = gen_imgs if labels is None else [gen_imgs, labels]
@@ -424,7 +412,7 @@ class TrainBCESimilarity(Train):
         return d_loss, d_loss_fake, d_loss_real, d_acc, d_fake_acc, d_real_acc
 
     @tf.function
-    def train_generator(self, z, labels):
+    def train_generator(self, z, labels, imgs):
         """
         Need a custom train loop for the generator because I want to factor in generators predictions
         """
@@ -452,44 +440,62 @@ class TrainBCESimilarity(Train):
         return loss
 
 
-class TrainMSE(Train):
-    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams) -> None:
-        super().__init__(built_model, params, mparams)
+class TrainBCEPatch(Train):
+    """
+    BCE with an additional loss based on cosine similarity
+    """
+
+    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams, label_getter: LabelGetter = None) -> None:
+        super().__init__(built_model, params, mparams, label_getter)
         self.loss = Loss(params)
 
-    def train_discriminator(self, gen_imgs, real_imgs):
-        d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_imgs, np.ones((self.mparams.batch_size, 1)))
-        d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(gen_imgs, -np.ones((self.mparams.batch_size, 1)))
+    def train_discriminator(self, gen_imgs, real_imgs, labels):
+        real = np.ones(self.mparams.discriminator_ones_zeroes_shape)
+        fake = np.zeros((self.mparams.discriminator_ones_zeroes_shape))
+
+        real_input = real_imgs if labels is None else [real_imgs, labels]
+        d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_input, real)
+        fake_input = gen_imgs if labels is None else [gen_imgs, labels]
+        d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(fake_input, fake)
         d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
         d_acc = 0.5 * np.add(d_real_acc, d_fake_acc)
-
         return d_loss, d_loss_fake, d_loss_real, d_acc, d_fake_acc, d_real_acc
 
-    def train_generator(self, z):
-        real = np.ones((self.mparams.batch_size, 1))
-        g_loss = self.gan.train_on_batch(z, real)
-        return g_loss
+    def generator_loss(self, disc_generated_output, gen_output, target):
+        gan_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(tf.ones_like(disc_generated_output), disc_generated_output)
+
+        # mean absolute error
+        l1_loss = tf.reduce_mean(tf.abs(target - gen_output))
+
+        LAMBDA = 100
+        total_gen_loss = gan_loss + LAMBDA * l1_loss
+
+        return total_gen_loss
 
     @tf.function
-    def _train_generator_similarity(self, z):
+    def train_generator(self, z, labels, imgs):
         """
         Need a custom train loop for the generator because I want to factor in generators predictions
         """
-        misleading_labels = np.zeros((self.mparams.batch_size, 1))
         with tf.GradientTape() as tape:
             # Generate fake images using the generator
-            generated_images = self.generator(z, training=True)
+            generator_input = z if labels is None else [z, labels]
+            generated_images = self.generator(generator_input, training=True)
 
             # Get the discriminator's predictions on the fake images
-            predictions = self.discriminator(generated_images, training=False)
+            fake_input = generated_images if labels is None else [generated_images, labels]
+            fake_preds = self.discriminator(fake_input, training=True)
 
-            g_loss = tf.keras.losses.MSE(misleading_labels, predictions)
-            worst_similarity = self.loss.worst_cosine_similarity(generated_images[:8])
-            additional_loss = self.loss.similarity_penalty_loss(worst_similarity)
-            g_loss += additional_loss
+            # Calculate the loss using the generator's output (generated_images)
+            # and the discriminator's predictions (fake_preds)
+            loss = self.generator_loss(fake_preds, generated_images, imgs)
 
-        grads = tape.gradient(g_loss, self.generator.trainable_weights)
+        # Calculate the gradients of the loss with respect to the generator's weights
+        grads = tape.gradient(loss, self.generator.trainable_weights)
+
+        if self.params.generator_clip_gradients_norm is not None:
+            grads = [tf.clip_by_norm(grad, self.params.generator_clip_gradients_norm) for grad in grads]
 
         # Update the weights of the generator
         self.generator_optimizer.apply_gradients(zip(grads, self.generator.trainable_weights))
-        return g_loss
+        return loss

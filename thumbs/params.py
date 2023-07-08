@@ -32,3 +32,8 @@ class MutableHyperParams:
     discriminator_training: bool = True
     generator_training: bool = True
     gradient_penalty_factor: float = 10
+    discriminator_ones_zeroes_shape: Optional[tuple] = None 
+
+    def __post_init__(self):
+        if self.discriminator_ones_zeroes_shape is None:
+            self.discriminator_ones_zeroes_shape = (self.batch_size, 1)

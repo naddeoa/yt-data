@@ -8,6 +8,9 @@ from thumbs.train import Train, load_iterations
 from thumbs.model.model import Model, BuiltModel
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Iterator, Union, Optional
+from scipy.ndimage import rotate
+from PIL import Image
+
 
 
 class Experiment(ABC):
@@ -51,6 +54,20 @@ class Experiment(ABC):
             rows=6,
             cols=6,
         )
+    
+    def rotate_tensor(self, image: tf.Tensor) -> tf.Tensor:
+        # Assuming you have an image file called 'image.jpg'
+        # Load the image using PIL (Python Imaging Library)
+        image = image.numpy()
+
+        # Rotate the image array by 20 degrees counterclockwise
+        rotated_array = rotate(image, angle=20, reshape=False, mode='')
+
+        # Convert the rotated array back to a PIL image
+        rotated_tensor = tf.convert_to_tensor(rotated_array)
+
+        return rotated_tensor 
+
 
     def custom_agumentation(self, image: tf.Tensor, labels: Optional[tf.Tensor] = None) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
         """
@@ -60,7 +77,9 @@ class Experiment(ABC):
             return image, labels
 
         image = tf.image.random_flip_left_right(image)
-        image = tf.keras.layers.RandomRotation(0.05)(image)
+        # Fill with 1 which is white in an image normalized to -1,1. Default is to reflect part of the image
+        # to fill the space in the rotation but that would introduce parts of the pokemon that that shouldn't be there.
+        image = tf.keras.layers.RandomRotation(0.05, fill_mode='constant', fill_value=1)(image)
 
         # 10% zoom
         (x, y, channels) = self.params.img_shape
