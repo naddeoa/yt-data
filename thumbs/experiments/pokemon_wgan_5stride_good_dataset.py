@@ -32,7 +32,7 @@ from keras.layers import (
 from tensorflow.compat.v1.keras.layers import BatchNormalization as BatchNormalizationV1
 from keras.layers.convolutional import Conv2D, Conv2DTranspose
 
-from thumbs.train import Train, TrainBCE, TrainBCESimilarity, TrainWassersteinGP
+from thumbs.train import Train, TrainWassersteinGP
 
 
 infinity = float("inf")
@@ -148,7 +148,7 @@ class PokemonExperiment(Experiment):
 
         return schedule
 
-    def custom_augmentation(self, image: tf.Tensor, labels: Optional[tf.Tensor] = None) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
+    def custom_agumentation(self, image: tf.Tensor, labels: Optional[tf.Tensor] = None) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
         """
         No zoom for this dataset since the pokemon are much closer to the edge of the frame
         """
@@ -161,7 +161,7 @@ class PokemonExperiment(Experiment):
         return image
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_wgan_5stride_good_dataset"
+        name = "pokemon_wgan_5stride_good_dataset_repro"
 
         exp_dir = 'EXP_DIR'
         if exp_dir in os.environ:

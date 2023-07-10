@@ -33,7 +33,7 @@ from keras.layers import (
 from tensorflow.compat.v1.keras.layers import BatchNormalization as BatchNormalizationV1
 from keras.layers.convolutional import Conv2D, Conv2DTranspose
 
-from thumbs.train import Train, TrainMSE, TrainBCE, TrainBCESimilarity, TrainWassersteinGP
+from thumbs.train import Train, TrainBCE, TrainWassersteinGP
 
 
 infinity = float("inf")

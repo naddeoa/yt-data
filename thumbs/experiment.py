@@ -55,16 +55,16 @@ class Experiment(ABC):
             cols=6,
         )
     
-    def rotate_tensor(self, image: tf.Tensor) -> tf.Tensor:
+    def rotate_tensor(self, image_tf: tf.Tensor) -> tf.Tensor:
         # Assuming you have an image file called 'image.jpg'
         # Load the image using PIL (Python Imaging Library)
-        image = image.numpy()
+        image = image_tf.numpy()
 
         # Rotate the image array by 20 degrees counterclockwise
         rotated_array = rotate(image, angle=20, reshape=False, mode='')
 
         # Convert the rotated array back to a PIL image
-        rotated_tensor = tf.convert_to_tensor(rotated_array)
+        rotated_tensor: tf.Tensor = tf.convert_to_tensor(rotated_array)
 
         return rotated_tensor 
 
@@ -74,7 +74,7 @@ class Experiment(ABC):
         flip, rotate, zoom randomly
         """
         if not self.augment_data():
-            return image, labels
+            return image if labels is None else image, labels
 
         image = tf.image.random_flip_left_right(image)
         # Fill with 1 which is white in an image normalized to -1,1. Default is to reflect part of the image
@@ -85,7 +85,7 @@ class Experiment(ABC):
         (x, y, channels) = self.params.img_shape
         image = tf.image.random_crop(image, size=[int(x * self.zoom_factor ), int(y * self.zoom_factor), channels])
         image = tf.image.resize(image, [x, y])
-        return image, labels
+        return image if labels is None else image, labels
 
     def prepare_data(self, dataset: tf.data.Dataset, mparams: MutableHyperParams) -> tf.data.Dataset:
         return (

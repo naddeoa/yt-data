@@ -42,7 +42,7 @@ from keras.layers import (
 from tensorflow.compat.v1.keras.layers import BatchNormalization as BatchNormalizationV1
 from keras.layers.convolutional import Conv2D, Conv2DTranspose
 
-from thumbs.train import Train, TrainBCE, TrainBCESimilarity, TrainWassersteinGP, TrainBCEPatch
+from thumbs.train import Train, TrainBCE, TrainWassersteinGP, TrainBCEPatch
 
 
 infinity = float("inf")
@@ -115,11 +115,11 @@ class PokemonSkipModel(Model):
         # 128x128x3
         image_input = Input(shape=img_shape)
 
-        # 128x128x1
+        # 128x128x3
         outline_input = Input(shape=self.params.img_shape)
 
         model_input = Concatenate(axis=-1)([image_input, outline_input])
-        # 128x128x4
+        # 128x128x6
 
         down1 = Conv2D(64, 4, strides=2, padding="same")(model_input)  # (batch_size, 64, 64, 64)
         down1 = LeakyReLU()(down1)
@@ -134,7 +134,6 @@ class PokemonSkipModel(Model):
 
         zero_pad1 = tf.keras.layers.ZeroPadding2D()(down3)  # (batch_size, 18, 18, 256)
         conv = Conv2D(512, 4, strides=1, use_bias=False)(zero_pad1)  # (batch_size, 15, 15, 512)
-
         norm1 = BatchNormalizationV1()(conv)
         leaky_relu = LeakyReLU()(norm1)
 
@@ -150,155 +149,13 @@ class PokemonSkipModel(Model):
         return None
 
 
-class PokemonModel(Model):
-    def build_generator(self, z_dim):
-        noise_input = Input(shape=(z_dim,), name="noise input")
-
-        # black/white only, same dimensions as image
-        outline_input = Input(shape=self.params.img_shape, name="outline input")
-        # 128x128x1
-
-        outline = Conv2D(64, kernel_size=5, strides=2, padding="same", use_bias=False)(outline_input)
-        outline = LeakyReLU(alpha=0.2)(outline)
-        # 64x64x64
-
-        outline = Conv2D(128, kernel_size=5, strides=2, padding="same", use_bias=False)(outline)
-        outline = BatchNormalization()(outline)
-        outline = LeakyReLU(alpha=0.2)(outline)
-        # 32x32x128
-
-        outline = Conv2D(256, kernel_size=5, strides=2, padding="same", use_bias=False)(outline)
-        outline = BatchNormalization()(outline)
-        outline = LeakyReLU(alpha=0.2)(outline)
-        # 16x16x256
-
-        outline = Conv2D(512, kernel_size=5, strides=2, padding="same", use_bias=False)(outline)
-        outline = BatchNormalization()(outline)
-        outline = LeakyReLU(alpha=0.2)(outline)
-        # 8x8x512
-
-        # outline = Conv2D(512, kernel_size=5, strides=2, padding="same", use_bias=False)(outline)
-        # outline = BatchNormalization()(outline)
-        # outline = LeakyReLU(alpha=0.2)(outline)
-        # 4x4x512
-
-        # outline = Conv2D(512, kernel_size=5, strides=2, padding="same", use_bias=False)(outline)
-        # outline = BatchNormalization()(outline)
-        # outline = LeakyReLU(alpha=0.2)(outline)
-        # 2x2x512
-
-        # outline = Conv2D(512, kernel_size=5, strides=2, padding="same", use_bias=False)(outline)
-        # outline = BatchNormalization()(outline)
-        # outline = LeakyReLU(alpha=0.2)(outline)
-        # 1x1x512
-
-        # Bottleneck
-        # x = Reshape((1, 1, z_dim))(noise_input)
-        # x = Concatenate(axis=-1)([x, outline])
-        # 1x1x612
-
-        # Bottleneck
-        x = Dense(8 * 8 * 512, use_bias=False)(noise_input)
-        x = Reshape((8, 8, 512))(x)
-        x = Concatenate(axis=-1)([x, outline])
-        # 8x8x1024
-
-        # x = Conv2DTranspose(612, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        # x = BatchNormalization()(x)
-        # x = ReLU()(x)
-        # 2x2x612
-
-        # x = Conv2DTranspose(612, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        # x = BatchNormalization()(x)
-        # x = ReLU()(x)
-        # 4x4x612
-
-        # x = Conv2DTranspose(612, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        # x = BatchNormalization()(x)
-        # x = ReLU()(x)
-        # 8x8x612
-
-        x = Conv2DTranspose(512, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = BatchNormalization()(x)
-        x = ReLU()(x)
-        # 16x16x256
-
-        x = Conv2DTranspose(256, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = BatchNormalization()(x)
-        x = ReLU()(x)
-        # 32x32x128
-
-        x = Conv2DTranspose(128, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = BatchNormalization()(x)
-        x = ReLU()(x)
-        # 64x64x64
-
-        x = Conv2DTranspose(3, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = Activation("tanh")(x)
-        # 128x128x3
-
-        model = tf.keras.Model([noise_input, outline_input], x, name="generator")
-        model.summary(line_length=200)
-        return model
-
-    def build_discriminator(self, img_shape):
-        # 128x128x3
-        image_input = Input(shape=img_shape)
-
-        # 128x128x1
-        outline_input = Input(shape=self.params.img_shape)
-
-        model_input = Concatenate(axis=-1)([image_input, outline_input])
-        # 128x128x4
-
-        x = Conv2D(64, kernel_size=5, strides=2, padding="same", use_bias=False)(model_input)
-        x = LeakyReLU(alpha=0.2)(x)
-        x = GaussianNoise(0.2)(x)
-        # 64x64x64
-
-        x = Conv2D(128, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = BatchNormalizationV1()(x)
-        # x = InstanceNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
-        x = GaussianNoise(0.2)(x)
-        # 32x32x128
-
-        x = Conv2D(256, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = BatchNormalizationV1()(x)
-        # x = InstanceNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
-        x = GaussianNoise(0.2)(x)
-        # 16x16x256
-
-        x = Conv2D(512, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = BatchNormalizationV1()(x)
-        x = LeakyReLU(alpha=0.2)(x)
-        x = GaussianNoise(0.2)(x)
-        # 8x8x512
-
-        x = Flatten()(x)
-        x = Dense(1, activation="sigmoid")(x)
-
-        model = tf.keras.Model([image_input, outline_input], x, name="discriminator")
-        model.summary(line_length=200)
-        return model
-
-    def build_gan(self, generator, discriminator):
-        # Can't really do this easily because they both take multiple inputs
-        return None
-
-
 class PokemonExperiment(Experiment):
     def __init__(self) -> None:
         super().__init__()
         self.zoom_factor = 0.98
         self.images = get_pokemon_data256(self.params.img_shape)
 
-    def get_data(self) -> Tuple[np.ndarray, np.ndarray]:
-        # For each image, generate an outline
-        # outlines = np.array([self.create_outline(image, threshold2=1000) for image in self.images])
-        # return (self.images, outlines)
-
+    def get_data(self) -> np.ndarray:
         return self.images
 
     def get_random_labels(self, n: int):
@@ -311,20 +168,16 @@ class PokemonExperiment(Experiment):
 
     def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
         return TrainBCEPatch(model, self.params, mparams, self.get_random_labels)
-        # return TrainBCESimilarity(model, self.params, mparams, self.get_random_labels)
-        # return TrainWassersteinGP(model, self.params, mparams, self.get_random_labels)
-
-    # def augment_data(self) -> bool:
-    #     return False
 
     def custom_agumentation(
         self, image: tf.Tensor, outline: Optional[tf.Tensor] = None
     ) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
         assert outline is None
-        image, outline = super().custom_agumentation(image, None)
-        assert outline is None
+        output = super().custom_agumentation(image, None)
+        assert isinstance(output, tuple)
+        image, outline = output
 
-        # get a random number from 100 to 1000
+        # This seems to be a reasonable range for the outline. Higher and some images were totally blank
         upper = tf.random.uniform(shape=[], minval=100, maxval=700, dtype=tf.int32)
         outline = tf.py_function(self.create_outline_tensor, [image, upper], tf.float32)
         return image, outline
@@ -356,15 +209,16 @@ class PokemonExperiment(Experiment):
         schedule[0, 100000] = MutableHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
-            batch_size=1,
+            batch_size=128,
             adam_b1=0.5,
             iterations=100000,
-            sample_interval=2,
+            sample_interval=10,
             discriminator_turns=1,
             generator_turns=1,
-            checkpoint_interval=10,
+            checkpoint_interval=200,
             gradient_penalty_factor=10,
-            discriminator_ones_zeroes_shape=(1, 14, 14, 1),  # patch gan discriminator
+            l1_loss_factor=100,
+            discriminator_ones_zeroes_shape=(128, 14, 14, 1),  # patch gan discriminator
         )
 
         return schedule
