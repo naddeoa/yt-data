@@ -147,7 +147,7 @@ def visualize_preprocessed_image(image, size=None):
     plt.close()
 
 
-def visualize_thumbnails(image_list, rows, cols, dir, file_name):
+def visualize_thumbnails(image_list, rows, cols, dir=None, file_name=None):
     plt.cla()
     plt.clf()
     # Create a grid of subplots to display the images
@@ -173,10 +173,11 @@ def visualize_thumbnails(image_list, rows, cols, dir, file_name):
     if is_notebook():
         plt.show()
 
-    if not os.path.exists(dir):
-        os.mkdir(dir)
-    plt.savefig(f"{dir}/_latest.jpg", bbox_inches="tight")
-    plt.savefig(f"{dir}/thumbnail-{file_name}.jpg", bbox_inches="tight")
+    if dir is not None and file_name is not None: 
+        if not os.path.exists(dir):
+            os.mkdir(dir)
+        plt.savefig(f"{dir}/_latest.jpg", bbox_inches="tight")
+        plt.savefig(f"{dir}/thumbnail-{file_name}.jpg", bbox_inches="tight")
     plt.close()
 
 

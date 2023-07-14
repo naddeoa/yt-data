@@ -8,7 +8,7 @@ from thumbs.util import get_current_time, is_colab
 from thumbs.viz import show_accuracy_plot, show_loss_plot, show_samples
 from thumbs.params import HyperParams, MutableHyperParams
 from thumbs.loss import Loss
-from typing import Iterable, List, Optional, Tuple, Any, Optional, Callable, Dict
+from typing import Iterable, List, Optional, Tuple, Any, Optional, Callable, Dict, Union
 from abc import ABC, abstractmethod
 import pathlib
 import os
@@ -17,9 +17,16 @@ import os
 from tqdm import tqdm
 
 
-def trunc(loss):
+def trunc(loss: Union[float, tf.Tensor, np.float_]) -> str:
     """Truncate loss values for display in tqdm"""
-    return f"{loss:.4f}"
+
+    _loss: Union[float, np.float_, np.ndarray]
+    if isinstance(loss, tf.Tensor):
+        _loss = loss.numpy()
+    else:
+        _loss = loss
+
+    return f"{_loss:.4f}"
 
 
 def load_iterations(iteration_path: str) -> Optional[int]:
@@ -70,11 +77,12 @@ def load_weights(gan, weight_path: str):
 LabelGetter = Optional[Callable[[int], np.ndarray]]
 
 
-def to_postfix(d_loss: tf.Tensor,  g_loss: tf.Tensor, d_other: Dict[str, tf.Tensor], g_other: Dict[str, tf.Tensor]) -> Dict[str, float]:
-    postfix = {k: trunc(v.numpy()) for k, v in {**d_other, **g_other}.items()}
-    postfix['d_loss'] = trunc(d_loss.numpy())
-    postfix['g_loss'] = trunc(g_loss.numpy())
+def to_postfix(d_loss: tf.Tensor, g_loss: tf.Tensor, d_other: Dict[str, tf.Tensor], g_other: Dict[str, tf.Tensor]) -> Dict[str, str]:
+    postfix = {k: trunc(v) for k, v in {**d_other, **g_other}.items()}
+    postfix["d_loss"] = trunc(d_loss)
+    postfix["g_loss"] = trunc(g_loss)
     return postfix
+
 
 class Train(ABC):
     # label_getter is a function that takes a number and returns an array of np.ndarray
@@ -195,7 +203,7 @@ class Train(ABC):
 
                 postfix = to_postfix(d_loss, g_loss, d_other, g_other)
                 progress.set_postfix(postfix)
-                loss_dg.append((float(d_loss.numpy()), float(g_loss.numpy())))
+                loss_dg.append((float(d_loss), float(g_loss)))
 
             updated = self.save_sample(
                 iteration=iteration,
@@ -333,8 +341,16 @@ class TrainWassersteinGP(Train):
     def generator_loss(self, disc_output, gen_output, target):
         loss = -tf.reduce_mean(disc_output)  # normal loss for wgan
         l1_loss = self.mparams.l1_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
-        total_gen_loss = loss + l1_loss
-        return total_gen_loss, {"g_l1_loss": l1_loss, "g_mean_loss": loss}
+        l2_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.square(target - gen_output))
+        total_gen_loss = loss + l1_loss + l2_loss
+
+        losses = {"g_mean_loss": loss}
+        if self.mparams.l1_loss_factor > 0:
+            losses["g_l1_loss"] = l1_loss
+        if self.mparams.l2_loss_factor > 0:
+            losses["g_l2_loss"] = l2_loss
+
+        return total_gen_loss, losses
 
     @tf.function
     def train_generator(self, z, labels, imgs) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
@@ -388,9 +404,17 @@ class TrainBCE(Train):
 
     def generator_loss(self, disc_generated_output, gen_output, target):
         gan_loss = tf.keras.losses.BinaryCrossentropy()(tf.ones_like(disc_generated_output), disc_generated_output)
-        l1_loss = tf.reduce_mean(tf.abs(target - gen_output))
-        total_gen_loss = gan_loss + self.mparams.l1_loss_factor * l1_loss
-        return total_gen_loss, {"g_l1_loss": l1_loss, "g_bce_loss": gan_loss}
+        l1_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
+        l2_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.square(target - gen_output))
+
+        losses = {"g_bce_loss": gan_loss}
+        if self.mparams.l1_loss_factor > 0:
+            losses["g_l1_loss"] = l1_loss
+        if self.mparams.l2_loss_factor > 0:
+            losses["g_l2_loss"] = l2_loss
+
+        total_gen_loss = gan_loss + l1_loss + l2_loss
+        return total_gen_loss, losses
 
     @tf.function
     def train_generator(self, z, labels, imgs) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
@@ -452,9 +476,16 @@ class TrainBCEPatch(Train):
 
     def generator_loss(self, disc_generated_output, gen_output, target):
         gan_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(tf.ones_like(disc_generated_output), disc_generated_output)
-        l1_loss = tf.reduce_mean(tf.abs(target - gen_output))
-        total_gen_loss = gan_loss + self.mparams.l1_loss_factor * l1_loss
-        return total_gen_loss, {'g_bce_loss': gan_loss, 'g_l1_loss': l1_loss}
+        l1_loss = self.mparams.l1_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
+        l2_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.square(target - gen_output))
+        total_gen_loss = gan_loss + l1_loss + l2_loss
+
+        losses = {"g_bce_loss": gan_loss}
+        if self.mparams.l1_loss_factor > 0:
+            losses["g_l1_loss"] = l1_loss
+        if self.mparams.l2_loss_factor > 0:
+            losses["g_l2_loss"] = l2_loss
+        return total_gen_loss, losses
 
     @tf.function
     def train_generator(self, z, labels, imgs) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:

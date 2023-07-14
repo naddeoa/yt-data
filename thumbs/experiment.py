@@ -12,11 +12,13 @@ from scipy.ndimage import rotate
 from PIL import Image
 
 
-
 class Experiment(ABC):
     def __init__(self) -> None:
         self.params = self.get_params()
         self.zoom_factor = 0.95
+        self.augment_flips = True
+        self.augment_rotations = True
+        self.augment_zooms = True
 
     @abstractmethod
     def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
@@ -54,38 +56,44 @@ class Experiment(ABC):
             rows=6,
             cols=6,
         )
-    
+
     def rotate_tensor(self, image_tf: tf.Tensor) -> tf.Tensor:
         # Assuming you have an image file called 'image.jpg'
         # Load the image using PIL (Python Imaging Library)
         image = image_tf.numpy()
 
         # Rotate the image array by 20 degrees counterclockwise
-        rotated_array = rotate(image, angle=20, reshape=False, mode='')
+        rotated_array = rotate(image, angle=20, reshape=False, mode="")
 
         # Convert the rotated array back to a PIL image
         rotated_tensor: tf.Tensor = tf.convert_to_tensor(rotated_array)
 
-        return rotated_tensor 
+        return rotated_tensor
 
-
-    def custom_agumentation(self, image: tf.Tensor, labels: Optional[tf.Tensor] = None) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
+    def custom_agumentation(
+        self, image: tf.Tensor, labels: Optional[tf.Tensor] = None
+    ) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
         """
         flip, rotate, zoom randomly
         """
         if not self.augment_data():
-            return image if labels is None else image, labels
+            return image if labels is None else (image, labels)
 
-        image = tf.image.random_flip_left_right(image)
+        if self.augment_flips:
+            image = tf.image.random_flip_left_right(image)
         # Fill with 1 which is white in an image normalized to -1,1. Default is to reflect part of the image
         # to fill the space in the rotation but that would introduce parts of the pokemon that that shouldn't be there.
-        image = tf.keras.layers.RandomRotation(0.05, fill_mode='constant', fill_value=1)(image)
+
+        if self.augment_rotations:
+            image = tf.keras.layers.RandomRotation(0.05, fill_mode="constant", fill_value=1)(image)
 
         # 10% zoom
-        (x, y, channels) = self.params.img_shape
-        image = tf.image.random_crop(image, size=[int(x * self.zoom_factor ), int(y * self.zoom_factor), channels])
-        image = tf.image.resize(image, [x, y])
-        return image if labels is None else image, labels
+        if self.augment_zooms:
+            (x, y, channels) = self.params.img_shape
+            image = tf.image.random_crop(image, size=[int(x * self.zoom_factor), int(y * self.zoom_factor), channels])
+            image = tf.image.resize(image, [x, y])
+
+        return image if labels is None else (image, labels)
 
     def prepare_data(self, dataset: tf.data.Dataset, mparams: MutableHyperParams) -> tf.data.Dataset:
         return (
@@ -96,18 +104,18 @@ class Experiment(ABC):
         )
 
     def start(self) -> None:
-        print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+        print("Num GPUs Available: ", len(tf.config.list_physical_devices("GPU")))
         schedule = self.get_mutable_params()
         loaded_i = load_iterations(self.params.iteration_path)
         if loaded_i is not None:
-            i = loaded_i + 1 # we already did this iteration and it was saved so add one
+            i = loaded_i + 1  # we already did this iteration and it was saved so add one
         else:
             i = 0
         dataset = tf.data.Dataset.from_tensor_slices(self.get_data())
 
         while True:
             try:
-                mparams: MutableHyperParams = schedule[i+1]
+                mparams: MutableHyperParams = schedule[i + 1]
                 print(mparams)
             except KeyError:
                 print(f"Checkpointed at iteration {i} but only training for {mparams.iterations} iterations")
@@ -121,4 +129,3 @@ class Experiment(ABC):
 
             for j in train.train(self.prepare_data(dataset, mparams), start_iter=i):
                 i = j
-
