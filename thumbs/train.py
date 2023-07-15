@@ -1,19 +1,15 @@
 import tensorflow as tf
-import matplotlib.pyplot as plt
 import json
-from tensorflow.keras import backend as K
 import numpy as np
 from thumbs.model.model import BuiltModel
-from thumbs.util import get_current_time, is_colab
-from thumbs.viz import show_accuracy_plot, show_loss_plot, show_samples
+from thumbs.util import is_colab
+from thumbs.viz import show_loss_plot, show_samples
 from thumbs.params import HyperParams, MutableHyperParams
 from thumbs.loss import Loss
-from typing import Iterable, List, Optional, Tuple, Any, Optional, Callable, Dict, Union
+from typing import List, Optional, Tuple, Any, Optional, Callable, Dict, Union
 from abc import ABC, abstractmethod
 import pathlib
 import os
-
-
 from tqdm import tqdm
 
 
@@ -84,9 +80,58 @@ def to_postfix(d_loss: tf.Tensor, g_loss: tf.Tensor, d_other: Dict[str, tf.Tenso
     return postfix
 
 
+class InputMapper(ABC):
+    @abstractmethod
+    def get_real_images(self, data_batch: Union[tuple, tf.Tensor]) -> tf.Tensor:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_generator_input(self, data_batch: Union[tuple, tf.Tensor], noise: np.ndarray) -> Union[tuple, tf.Tensor]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_discriminator_input_real(self, data_batch: Union[tuple, tf.Tensor]) -> Union[tuple, tf.Tensor]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_discriminator_input_fake(self, data_batch: Union[tuple, tf.Tensor], generated_imgs: np.ndarray) -> Union[tuple, tf.Tensor]:
+        raise NotImplementedError()
+
+
+class DefaultInputMapper(InputMapper):
+    def get_real_images(self, data_batch: Union[tuple, tf.Tensor]) -> tf.Tensor:
+        if not isinstance(data_batch, tuple):
+            return data_batch
+
+        t: tf.Tensor = data_batch[0]
+        return t
+
+    def get_generator_input(self, data_batch: Union[tuple, tf.Tensor], noise: np.ndarray) -> Union[tuple, tf.Tensor]:
+        if not isinstance(data_batch, tuple) or len(data_batch) == 1:
+            return (noise,)
+
+        return (noise,) + data_batch[1:]
+
+    def get_discriminator_input_real(self, data_batch: Union[tuple, tf.Tensor]) -> Union[tuple, tf.Tensor]:
+        return data_batch
+
+    def get_discriminator_input_fake(self, data_batch: Union[tuple, tf.Tensor], generated_imgs: np.ndarray) -> Union[tuple, tf.Tensor]:
+        if not isinstance(data_batch, tuple) or len(data_batch) == 1:
+            return (generated_imgs,)
+
+        return (generated_imgs,) + data_batch[1:]
+
+
 class Train(ABC):
     # label_getter is a function that takes a number and returns an array of np.ndarray
-    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams, label_getter: LabelGetter = None) -> None:
+    def __init__(
+        self,
+        built_model: BuiltModel,
+        params: HyperParams,
+        mparams: MutableHyperParams,
+        label_getter: LabelGetter = None,
+        input_mapper: InputMapper = DefaultInputMapper(),
+    ) -> None:
         self.gan = built_model.gan
         self.mparams = mparams
         self.label_getter = label_getter
@@ -94,6 +139,7 @@ class Train(ABC):
         self.discriminator = built_model.discriminator
         self.discriminator_optimizer = built_model.discriminator_optimizer
         self.generator_optimizer = built_model.generator_optimizer
+        self.input_mapper = input_mapper
         self.params = params
         self.loss = Loss(params)
 
@@ -117,11 +163,11 @@ class Train(ABC):
 
     # TODO make these return a (tensor, dict) where the dict has all of the components of the loss
     @abstractmethod
-    def train_discriminator(self, gen_imgs, real_imgs, labels=None) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         raise NotImplementedError()
 
     @abstractmethod
-    def train_generator(self, z, labels=None, cur_imgs=None) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def train_generator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         raise NotImplementedError()
 
     def train(self, dataset: tf.data.Dataset, start_iter=0):
@@ -152,54 +198,34 @@ class Train(ABC):
         for iteration in progress:
             # Google colab can't handle two progress bars, so overwrite the epoch one each time.
             for item in tqdm(dataset, position=1 if not is_colab() else 0, leave=False if not is_colab() else True, desc="batch"):
-                if isinstance(item, tuple):
-                    imgs, labels = item
-                else:
-                    imgs = item
-                    labels = None
-
                 # -------------------------
                 #  Train the Discriminator
                 # -------------------------
-                # Generate a batch of fake images
                 for d_turn in range(self.mparams.discriminator_turns):
-                    cur_imgs = imgs
-                    cur_labels = labels
+                    cur_item: tuple = item
 
                     z = np.random.normal(0, 1, (self.mparams.batch_size, self.params.latent_dim))
-                    gen_input = z if cur_labels is None else [z, cur_labels]
-                    gen_imgs = self.generator.predict(gen_input, verbose=0)
+                    generator_input = self.input_mapper.get_generator_input(cur_item, z)
+                    gen_imgs = self.generator.predict(generator_input, verbose=0)
 
                     if d_turn > 0:
                         # Get a new random shuffle from the dataset for multiple turns
-                        next_imgs = dataset.__iter__().__next__()
-                        if isinstance(next_imgs, tuple):
-                            cur_imgs, cur_labels = next_imgs
-                        else:
-                            cur_imgs = next_imgs
-                            cur_labels = None
+                        cur_item = dataset.__iter__().__next__()
 
-                    d_loss, d_other = self.train_discriminator(gen_imgs, cur_imgs, cur_labels)
+                    d_loss, d_other = self.train_discriminator(gen_imgs, cur_item)
 
                 # ---------------------
                 #  Train the Generator
                 # ---------------------
-                # gen_imgs = self.generator.predict(z, verbose=0)
                 for g_turn in range(self.mparams.generator_turns):
-                    cur_imgs = imgs
-                    cur_labels = labels
+                    cur_item = item
                     z = np.random.normal(0, 1, (self.mparams.batch_size, self.params.latent_dim))
 
                     if g_turn > 0:
                         # Get a new random shuffle from the dataset for multiple turns
-                        next_imgs = dataset.__iter__().__next__()
-                        if isinstance(next_imgs, tuple):
-                            cur_imgs, cur_labels = next_imgs
-                        else:
-                            cur_imgs = next_imgs
-                            cur_labels = None
+                        cur_item = dataset.__iter__().__next__()
 
-                    g_loss, g_other = self.train_generator(z, cur_labels, cur_imgs)
+                    g_loss, g_other = self.train_generator(z, cur_item)
 
                 postfix = to_postfix(d_loss, g_loss, d_other, g_other)
                 progress.set_postfix(postfix)
@@ -284,7 +310,7 @@ class TrainWassersteinGP(Train):
         super().__init__(built_model, params, mparams, label_getter)
         self.loss = Loss(params)
 
-    def gradient_penalty(self, real_images, fake_images, labels=None):
+    def gradient_penalty(self, fake_images, data: tuple):
         """Calculates the gradient penalty.
 
         This loss is calculated on an interpolated image
@@ -294,13 +320,14 @@ class TrainWassersteinGP(Train):
         alpha = tf.random.normal([self.mparams.batch_size, 1, 1, 1], 0.0, 1.0)
         # alpha = tf.random.uniform(shape=[self.mparams.batch_size, 1, 1, 1], minval=0.0, maxval=1.0)
 
+        real_images = self.input_mapper.get_real_images(data)
         diff = fake_images - real_images
         interpolated = real_images + alpha * diff
 
         with tf.GradientTape() as gp_tape:
             gp_tape.watch(interpolated)
             # 1. Get the discriminator output for this interpolated image.
-            disc_input = interpolated if labels is None else [interpolated, labels]
+            disc_input = self.input_mapper.get_discriminator_input_fake(data, interpolated)
             pred = self.discriminator(disc_input, training=True)
 
         # 2. Calculate the gradients w.r.t to this interpolated image.
@@ -316,19 +343,21 @@ class TrainWassersteinGP(Train):
         return fake_loss - real_loss, {"d_loss_real": real_loss, "d_loss_fake": fake_loss}
 
     @tf.function
-    def train_discriminator(self, gen_imgs, real_imgs, labels) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+        # def train_discriminator(self, gen_imgs, real_imgs, labels) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         # Get the latent vector
         with tf.GradientTape() as tape:
             # Get the logits for the fake images
-            disc_gen_inputs = gen_imgs if labels is None else [gen_imgs, labels]
-            fake_logits = self.discriminator(disc_gen_inputs, training=True)
-            # Get the logits for the real images
-            disc_real_inputs = real_imgs if labels is None else [real_imgs, labels]
-            real_logits = self.discriminator(disc_real_inputs, training=True)
+            real_input = self.input_mapper.get_discriminator_input_real(data)
+            real_logits = self.discriminator(real_input, training=True)
+
+            fake_input = self.input_mapper.get_discriminator_input_fake(data, gen_imgs)
+            fake_logits = self.discriminator(fake_input, training=True)
+
             # Calculate the discriminator loss using the fake and real image logits
             d_cost, other = self.discriminator_loss(real_img=real_logits, fake_img=fake_logits)
             # Calculate the gradient penalty
-            gp = self.gradient_penalty(real_imgs, gen_imgs, labels)
+            gp = self.gradient_penalty(gen_imgs, data)
             # Add the gradient penalty to the original discriminator loss
             d_loss = d_cost + (gp * self.mparams.gradient_penalty_factor)
 
@@ -353,16 +382,17 @@ class TrainWassersteinGP(Train):
         return total_gen_loss, losses
 
     @tf.function
-    def train_generator(self, z, labels, imgs) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def train_generator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         with tf.GradientTape() as tape:
             # Generate fake images using the generator
-            generator_input = z if labels is None else [z, labels]
+            generator_input = self.input_mapper.get_generator_input(data, z)
             generated_images = self.generator(generator_input, training=True)
             # Get the discriminator logits for fake images
-            discrim_input = generated_images if labels is None else [generated_images, labels]
+            discrim_input = self.input_mapper.get_discriminator_input_fake(data, generated_images)
             disc_output = self.discriminator(discrim_input, training=True)
             # Calculate the generator loss
-            g_loss, other = self.generator_loss(disc_output, generated_images, imgs)
+            real_images = self.input_mapper.get_real_images(data)
+            g_loss, other = self.generator_loss(disc_output, generated_images, real_images)
 
         # Get the gradients w.r.t the generator loss
         gen_gradient = tape.gradient(g_loss, self.generator.trainable_variables)
@@ -383,14 +413,16 @@ class TrainBCE(Train):
         super().__init__(built_model, params, mparams, label_getter)
         self.loss = Loss(params)
 
-    def train_discriminator(self, gen_imgs, real_imgs, labels=None) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         real = np.ones(self.mparams.discriminator_ones_zeroes_shape)
         fake = np.zeros((self.mparams.discriminator_ones_zeroes_shape))
 
-        real_input = real_imgs if labels is None else [real_imgs, labels]
+        real_input = self.input_mapper.get_discriminator_input_real(data)
         d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_input, real)
-        fake_input = gen_imgs if labels is None else [gen_imgs, labels]
+
+        fake_input = self.input_mapper.get_discriminator_input_fake(data, gen_imgs)
         d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(fake_input, fake)
+
         d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
         d_acc = 0.5 * np.add(d_real_acc, d_fake_acc)
         losses = {
@@ -417,22 +449,22 @@ class TrainBCE(Train):
         return total_gen_loss, losses
 
     @tf.function
-    def train_generator(self, z, labels, imgs) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def train_generator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         """
         Need a custom train loop for the generator because I want to factor in generators predictions
         """
         with tf.GradientTape() as tape:
-            # Generate fake images using the generator
-            generator_input = z if labels is None else [z, labels]
+            generator_input = self.input_mapper.get_generator_input(data, z)
             generated_images = self.generator(generator_input, training=True)
 
             # Get the discriminator's predictions on the fake images
-            fake_input = generated_images if labels is None else [generated_images, labels]
+            fake_input = self.input_mapper.get_discriminator_input_fake(data, generated_images)
             fake_preds = self.discriminator(fake_input, training=True)
 
             # Calculate the loss using the generator's output (generated_images)
             # and the discriminator's predictions (fake_preds)
-            loss, other = self.generator_loss(fake_preds, generated_images, imgs)
+            real_images = self.input_mapper.get_real_images(data)
+            loss, other = self.generator_loss(fake_preds, generated_images, real_images)
 
         # Calculate the gradients of the loss with respect to the generator's weights
         grads = tape.gradient(loss, self.generator.trainable_weights)
@@ -447,21 +479,23 @@ class TrainBCE(Train):
 
 class TrainBCEPatch(Train):
     """
-    BCE with an additional loss based on cosine similarity
+    BCE based on patch output logits from the discriminator, not a single sigmoid output.
     """
 
     def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams, label_getter: LabelGetter = None) -> None:
         super().__init__(built_model, params, mparams, label_getter)
         self.loss = Loss(params)
 
-    def train_discriminator(self, gen_imgs, real_imgs, labels=None) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         real = np.ones(self.mparams.discriminator_ones_zeroes_shape)
         fake = np.zeros((self.mparams.discriminator_ones_zeroes_shape))
 
-        real_input = real_imgs if labels is None else [real_imgs, labels]
+        real_input = self.input_mapper.get_discriminator_input_real(data)
         d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_input, real)
-        fake_input = gen_imgs if labels is None else [gen_imgs, labels]
+
+        fake_input = self.input_mapper.get_discriminator_input_fake(data, gen_imgs)
         d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(fake_input, fake)
+
         d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
         d_acc = 0.5 * np.add(d_real_acc, d_fake_acc)
 
@@ -488,22 +522,23 @@ class TrainBCEPatch(Train):
         return total_gen_loss, losses
 
     @tf.function
-    def train_generator(self, z, labels, imgs) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def train_generator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         """
         Need a custom train loop for the generator because I want to factor in generators predictions
         """
         with tf.GradientTape() as tape:
             # Generate fake images using the generator
-            generator_input = z if labels is None else [z, labels]
+            generator_input = self.input_mapper.get_generator_input(data, z)
             generated_images = self.generator(generator_input, training=True)
 
             # Get the discriminator's predictions on the fake images
-            fake_input = generated_images if labels is None else [generated_images, labels]
+            fake_input = self.input_mapper.get_discriminator_input_fake(data, generated_images)
             fake_preds = self.discriminator(fake_input, training=True)
 
             # Calculate the loss using the generator's output (generated_images)
             # and the discriminator's predictions (fake_preds)
-            loss, other = self.generator_loss(fake_preds, generated_images, imgs)
+            real_images = self.input_mapper.get_real_images(data)
+            loss, other = self.generator_loss(fake_preds, generated_images, real_images)
 
         # Calculate the gradients of the loss with respect to the generator's weights
         grads = tape.gradient(loss, self.generator.trainable_weights)

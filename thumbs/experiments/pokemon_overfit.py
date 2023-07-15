@@ -79,28 +79,40 @@ class PokemonModel(Model):
         return model
 
     def build_discriminator(self, img_shape):
-        model = Sequential(name="discriminator")
+        # Input layer
+        input_layer = Input(shape=img_shape, name="discriminator_input")
 
-        # model.add(DiffAugmentLayer(input_shape=img_shape))
-        model.add(Conv2D(ndf, kernel_size=4, strides=2, padding="same", use_bias=False, input_shape=img_shape))
-        model.add(LeakyReLU(alpha=0.2))
+        # First Convolutional Block
+        x = Conv2D(ndf, kernel_size=4, strides=2, padding="same", use_bias=False)(input_layer)
+        x = LeakyReLU(alpha=0.2)(x)
 
-        model.add(Conv2D(ndf * 2, kernel_size=4, strides=2, padding="same", use_bias=False))
-        model.add(InstanceNormalization())
-        model.add(LeakyReLU(alpha=0.2))
+        # Second Convolutional Block
+        x = Conv2D(ndf * 2, kernel_size=4, strides=2, padding="same", use_bias=False)(x)
+        x = InstanceNormalization()(x)
+        x = LeakyReLU(alpha=0.2)(x)
 
-        model.add(Conv2D(ndf * 4, kernel_size=4, strides=2, padding="same", use_bias=False))
-        model.add(InstanceNormalization())
-        model.add(LeakyReLU(alpha=0.2))
+        # Third Convolutional Block
+        x = Conv2D(ndf * 4, kernel_size=4, strides=2, padding="same", use_bias=False)(x)
+        x = InstanceNormalization()(x)
+        x = LeakyReLU(alpha=0.2)(x)
 
-        model.add(Conv2D(ndf * 8, kernel_size=4, strides=2, padding="same", use_bias=False))
-        model.add(LeakyReLU(alpha=0.2))
+        # Fourth Convolutional Block
+        x = Conv2D(ndf * 8, kernel_size=4, strides=2, padding="same", use_bias=False)(x)
+        x = LeakyReLU(alpha=0.2)(x)
 
-        model.add(Flatten())
-        # model.add(Dense(1, activation="sigmoid"))
-        model.add(Dense(1))
+        # Flatten
+        x = Flatten()(x)
+
+        # First head: real vs fake output
+        out1 = Dense(1, name="out_real_vs_fake")(x)  # No activation, assuming you're using a Wasserstein loss
+
+        # Second head: number of legs output
+        out2 = Dense(2, activation="softmax", name="out_num_legs")(x)
+
+        model = Model(inputs=input_layer, outputs=[out1, out2], name="discriminator")
 
         model.summary(line_length=200)
+
         return model
 
     def build_gan(self, generator, discriminator) -> None:
