@@ -1,4 +1,6 @@
 import thumbs.config_logging  # must be first
+from itertools import islice
+from copy import copy
 import pandas as pd
 import tensorflow as tf
 import os
@@ -112,25 +114,66 @@ class PokemonModel(Model):
         types = Dense(8 * 8 * ngf * 8)(types_input)
         types = Reshape((8, 8, ngf * 8))(types)
 
-        x = Multiply()([noise, types])
+        noise_input = Input(shape=(z_dim,), name="noise input")
+        noise = Dense(8 * 8 * ngf * 8)(noise_input)
+        noise = Reshape((8, 8, ngf * 8))(noise)
 
-        x = Conv2DTranspose(ngf * 4, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = BatchNormalization()(x)
-        x = LeakyReLU()(x)
+        types_input = Input(shape=(self.num_classes,))
+        types = Dense(8 * 8 * ngf * 8)(types_input)
+        types = Reshape((8, 8, ngf * 8))(types)
 
-        x = Conv2DTranspose(ngf * 2, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = BatchNormalization()(x)
-        x = LeakyReLU()(x)
+        # black/white only, same dimensions as image
+        outline_input = Input(shape=self.params.img_shape, name="outline input")
 
-        x = Conv2DTranspose(ngf, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = BatchNormalization()(x)
-        x = LeakyReLU()(x)
+        # Encoder
+        # Layer 1: input shape is (batch_size, 128, 128, 1)
+        down1 = Conv2D(ngf, 4, strides=2, padding="same", use_bias=False)(outline_input)  # output shape: (batch_size, 64, 64, 64)
+        down1 = LeakyReLU()(down1)
 
-        x = Conv2DTranspose(3, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = Activation("tanh")(x)
-        x = DiffAugmentLayer()(x)
+        # Layer 2: input shape is (batch_size, 64, 64, 64)
+        down2 = Conv2D(ngf * 2, 4, strides=2, padding="same", use_bias=False)(down1)  # output shape: (batch_size, 32, 32, 128)
+        down2 = BatchNormalization()(down2)
+        down2 = LeakyReLU()(down2)
 
-        model = tf.keras.Model([noise_input, types_input], x, name="generator")
+        # Layer 3: input shape is (batch_size, 32, 32, 128)
+        down3 = Conv2D(ngf * 4, 4, strides=2, padding="same", use_bias=False)(down2)  # output shape: (batch_size, 16, 16, 256)
+        down3 = BatchNormalization()(down3)
+        down3 = LeakyReLU()(down3)
+
+        # Layer 4: input shape is (batch_size, 16, 16, 256)
+        down4 = Conv2D(ngf * 8, 4, strides=2, padding="same", use_bias=False)(down3)  # output shape: (batch_size, 8, 8, 512)
+        down4 = BatchNormalization()(down4)
+        down4 = LeakyReLU()(down4)
+
+        # Mix in the noise and types
+        bottleneck = Multiply()([noise, types, down4])
+
+        # Decoder with skip connections
+        # Layer 1: input shape is (batch_size, 8, 8, 512)
+        up1 = Conv2DTranspose(ngf * 4, 4, strides=2, padding="same", use_bias=False)(bottleneck)  # output shape: (batch_size, 16, 16, 256)
+        up1 = BatchNormalization()(up1)
+        up1 = Concatenate()([up1, down3])  # output shape: (batch_size, 16, 16, 512)
+        up1 = LeakyReLU()(up1)
+
+        # Layer 2: input shape is (batch_size, 16, 16, 512)
+        up2 = Conv2DTranspose(ngf * 2, 4, strides=2, padding="same", use_bias=False)(up1)  # output shape: (batch_size, 32, 32, 128)
+        up2 = BatchNormalization()(up2)
+        up2 = Concatenate()([up2, down2])  # output shape: (batch_size, 32, 32, 256)
+        up2 = LeakyReLU()(up2)
+
+        # Layer 3: input shape is (batch_size, 32, 32, 256)
+        up3 = Conv2DTranspose(ngf, 4, strides=2, padding="same", use_bias=False)(up2)  # output shape: (batch_size, 64, 64, 64)
+        up3 = BatchNormalization()(up3)
+        up3 = Concatenate()([up3, down1])  # output shape: (batch_size, 64, 64, 128)
+        up3 = LeakyReLU()(up3)
+
+        # Final layer: input shape is (batch_size, 64, 64, 128)
+        last = Conv2DTranspose(3, 4, strides=2, padding="same", use_bias=False, activation="tanh")(
+            up3
+        )  # output shape: (batch_size, 128, 128, 3)
+
+        model = tf.keras.Model([noise_input, types_input, outline_input], last, name="generator")
+
         model.summary(line_length=200)
         return model
 
@@ -138,11 +181,14 @@ class PokemonModel(Model):
         image_input = Input(shape=img_shape)
         image_augment = DiffAugmentLayer()(image_input)
 
+        outline_input = Input(shape=self.params.img_shape)
+        outline_augment = DiffAugmentLayer()(outline_input)
+
         types_input = Input(shape=(self.num_classes,))
         types_embedding = Dense(img_shape[0] * img_shape[1] * 1)(types_input)
         types_embedding = Reshape((img_shape[0], img_shape[1], 1))(types_embedding)
 
-        model_input = Multiply()([image_augment, types_embedding])
+        model_input = Multiply()([image_augment, outline_augment, types_embedding])
 
         x = Conv2D(ndf, kernel_size=5, strides=2, padding="same", use_bias=False)(model_input)
         x = LeakyReLU(alpha=0.2)(x)
@@ -162,7 +208,7 @@ class PokemonModel(Model):
         x = Flatten()(x)
         x = Dense(1)(x)
 
-        model = tf.keras.Model([image_input, types_input], x, name="discriminator")
+        model = tf.keras.Model([image_input, types_input, outline_input], x, name="discriminator")
         model.summary(line_length=200)
         return model
 
@@ -182,12 +228,9 @@ class PokemonExperiment(Experiment):
         data, types = get_pokemon_and_types(self.params.img_shape)
         self.vocab = types
         self.lookup = StringLookup(output_mode="multi_hot", name="string_lookup_gen", vocabulary=self.vocab)
-        self.lookup_vector = StringLookup(output_mode="multi_hot", name="string_lookup_gen", vocabulary=self.vocab, invert=True)
 
         self.images = np.array([x[0] for x in data])
         self.labels = np.array([self.lookup(item[1]).numpy() for item in data])
-
-        self.zoom_factor = 0.9
 
         # Can lookup the type info given a pokedex number
         df = pd.read_csv("/home/anthony/workspace/yt-data/data/pokemon/stats.csv")
@@ -203,15 +246,63 @@ class PokemonExperiment(Experiment):
 
             self.id_to_types[row["#"]] = both_types
 
+    def lookup_inverted(self, multi_hot_encoded):
+        return [self.vocab[i - 1] for i, is_present in enumerate(multi_hot_encoded) if is_present]
+
     def get_data(self) -> Tuple[np.ndarray, np.ndarray]:
         return self.images, self.labels
 
     def get_random_labels(self, n: int):
-        # get n random samples from self.labels
-        return self.labels[np.random.randint(0, len(self.labels), n)]
+        # random_indexes = np.random.randint(0, len(self.labels), n)
+        # get a random pokemon/type label and then generate the outline
+        # The outline should align with the pokemon type since the model is trained that way
+        # pokemon = self.images[random_indexes]
+        # types = self.labels[random_indexes]
+        # outlines = np.array([self.create_outline(x) for x in pokemon])
+        # return types, outlines
+
+        params = copy(self.get_mutable_params()[0])
+        params.batch_size = n
+        dataset = tf.data.Dataset.from_tensor_slices(self.get_data())
+        data_iterator = self.prepare_data(dataset, params).__iter__()
+        items = data_iterator.get_next()
+        return items[1:]
 
     def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
         return TrainWassersteinGP(model, self.params, mparams, self.get_random_labels)
+
+    def custom_agumentation(self, images: tf.Tensor, type_labels: Optional[tf.Tensor] = None) -> Union[tf.Tensor, tuple]:
+        assert type_labels is not None
+        output = super().custom_agumentation(images, None)
+        assert not isinstance(output, tuple)
+        images = output
+
+        # This seems to be a reasonable range for the outline. Higher and some images were totally blank
+        upper = tf.random.uniform(shape=[], minval=100, maxval=700, dtype=tf.int32)
+        outlines = tf.py_function(self.create_outline_tensor, [images, upper], tf.float32)
+        return images, type_labels, outlines
+
+    def create_outline_tensor(self, image: tf.Tensor, upper=255, lower=None) -> tf.Tensor:
+        outline = self.create_outline(image.numpy(), upper=upper.numpy(), lower=lower)
+        tensor: tf.Tensor = tf.convert_to_tensor(outline, dtype=tf.float32)
+        return tensor
+
+    def create_outline(self, image: np.ndarray, upper=255, lower=None) -> np.ndarray:
+        """
+        image: numpy array that has been normalized to -1,1
+        return: numpy array of an outline, noramlized to -1,1, with the same height and width
+        """
+        # Will result in outlines of varying detail
+        image = unnormalize_image(image)
+        # thresholds = [10, 100, 400, 800, 1000]
+        if lower is None:
+            lower = upper // 3
+
+        edges: np.ndarray = cv2.bitwise_not(cv2.Canny(image, threshold1=lower, threshold2=upper))
+        edges = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+
+        assert edges.shape == image.shape
+        return normalize_image(edges)
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
@@ -231,7 +322,7 @@ class PokemonExperiment(Experiment):
         return schedule
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_conditional_types"
+        name = "pokemon_conditional_types_outline"
 
         exp_dir = "EXP_DIR"
         if exp_dir in os.environ:

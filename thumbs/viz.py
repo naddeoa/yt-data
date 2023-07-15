@@ -133,8 +133,6 @@ def visualize_image_scatter(images):
 #         plt.close()
 
 
-
-
 def visualize_preprocessed_image(image, size=None):
     image = unnormalize_image(image)
 
@@ -173,7 +171,7 @@ def visualize_thumbnails(image_list, rows, cols, dir=None, file_name=None):
     if is_notebook():
         plt.show()
 
-    if dir is not None and file_name is not None: 
+    if dir is not None and file_name is not None:
         if not os.path.exists(dir):
             os.mkdir(dir)
         plt.savefig(f"{dir}/_latest.jpg", bbox_inches="tight")
@@ -186,7 +184,7 @@ def show_samples(generator, latent_dim, file_name, dir: str, rows=6, cols=6, lab
     noise = np.random.normal(0, 1, (rows * cols, latent_dim))
     if label_getter is not None:
         labels = label_getter(rows * cols)
-        generated_thumbnails = generator.predict([noise, labels], verbose=0)
+        generated_thumbnails = generator.predict((noise, *labels), verbose=0)
     else:
         generated_thumbnails = generator.predict(noise, verbose=0)
     visualize_thumbnails(generated_thumbnails, rows, cols, dir, file_name)

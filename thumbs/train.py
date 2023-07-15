@@ -134,8 +134,8 @@ class Train(ABC):
     ) -> None:
         self.gan = built_model.gan
         self.mparams = mparams
-        self.label_getter = label_getter
         self.generator = built_model.generator
+        self.label_getter = label_getter
         self.discriminator = built_model.discriminator
         self.discriminator_optimizer = built_model.discriminator_optimizer
         self.generator_optimizer = built_model.generator_optimizer
@@ -306,10 +306,6 @@ class Train(ABC):
 
 
 class TrainWassersteinGP(Train):
-    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams, label_getter: LabelGetter = None) -> None:
-        super().__init__(built_model, params, mparams, label_getter)
-        self.loss = Loss(params)
-
     def gradient_penalty(self, fake_images, data: tuple):
         """Calculates the gradient penalty.
 
@@ -408,11 +404,6 @@ class TrainBCE(Train):
     """
     BCE with an additional loss based on cosine similarity
     """
-
-    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams, label_getter: LabelGetter = None) -> None:
-        super().__init__(built_model, params, mparams, label_getter)
-        self.loss = Loss(params)
-
     def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         real = np.ones(self.mparams.discriminator_ones_zeroes_shape)
         fake = np.zeros((self.mparams.discriminator_ones_zeroes_shape))
@@ -481,11 +472,6 @@ class TrainBCEPatch(Train):
     """
     BCE based on patch output logits from the discriminator, not a single sigmoid output.
     """
-
-    def __init__(self, built_model: BuiltModel, params: HyperParams, mparams: MutableHyperParams, label_getter: LabelGetter = None) -> None:
-        super().__init__(built_model, params, mparams, label_getter)
-        self.loss = Loss(params)
-
     def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         real = np.ones(self.mparams.discriminator_ones_zeroes_shape)
         fake = np.zeros((self.mparams.discriminator_ones_zeroes_shape))

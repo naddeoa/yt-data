@@ -70,9 +70,7 @@ class Experiment(ABC):
 
         return rotated_tensor
 
-    def custom_agumentation(
-        self, image: tf.Tensor, labels: Optional[tf.Tensor] = None
-    ) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
+    def custom_agumentation(self, image: tf.Tensor, labels: Optional[tf.Tensor] = None) -> Union[tf.Tensor, tuple]:
         """
         flip, rotate, zoom randomly
         """
