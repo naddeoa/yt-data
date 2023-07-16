@@ -2,8 +2,8 @@ import thumbs.config_logging  # must be first
 from itertools import islice
 from copy import copy
 import pandas as pd
-import tensorflow as tf
 import os
+import tensorflow as tf
 import cv2
 from typing import List, Tuple, Iterator, Optional, Union
 from rangedict import RangeDict
@@ -106,23 +106,8 @@ class PokemonModel(Model):
         self.num_classes = len(vocab) + 1  # 18 pokemon types plus an OOV token
 
     def build_generator(self, z_dim):
-        noise_input = Input(shape=(z_dim,))
-        noise = Dense(8 * 8 * ngf * 8)(noise_input)
-        noise = Reshape((8, 8, ngf * 8))(noise)
-
-        types_input = Input(shape=(self.num_classes,))
-        types = Dense(8 * 8 * ngf * 8)(types_input)
-        types = Reshape((8, 8, ngf * 8))(types)
-
         noise_input = Input(shape=(z_dim,), name="noise input")
-        noise = Dense(8 * 8 * ngf * 8)(noise_input)
-        noise = Reshape((8, 8, ngf * 8))(noise)
-
-        types_input = Input(shape=(self.num_classes,))
-        types = Dense(8 * 8 * ngf * 8)(types_input)
-        types = Reshape((8, 8, ngf * 8))(types)
-
-        # black/white only, same dimensions as image
+        types_input = Input(shape=(self.num_classes), name="types input")
         outline_input = Input(shape=self.params.img_shape, name="outline input")
 
         # Encoder
@@ -146,7 +131,10 @@ class PokemonModel(Model):
         down4 = LeakyReLU()(down4)
 
         # Mix in the noise and types
-        bottleneck = Multiply()([noise, types, down4])
+        noise_and_types = Concatenate()([noise_input, types_input])
+        noise_and_types = Dense(8 * 8 * ngf * 8)(noise_and_types)
+        noise_and_types = Reshape((8, 8, ngf * 8))(noise_and_types)
+        bottleneck = Concatenate()([noise_and_types, down4])
 
         # Decoder with skip connections
         # Layer 1: input shape is (batch_size, 8, 8, 512)
@@ -175,33 +163,44 @@ class PokemonModel(Model):
         model = tf.keras.Model([noise_input, types_input, outline_input], last, name="generator")
 
         model.summary(line_length=200)
+        f = "/mnt/e/experiments/generator.jpg"
+        tf.keras.utils.plot_model(model, to_file=f, show_shapes=True, dpi=64)
         return model
 
-    def build_discriminator(self, img_shape=(128, 128, 3)):
-        image_input = Input(shape=img_shape)
-        image_augment = DiffAugmentLayer()(image_input)
+    def build_discriminator(self, img_shape):
+        def convolutions(x):
+            x = Conv2D(ndf, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
+            x = LeakyReLU(alpha=0.2)(x)
 
-        outline_input = Input(shape=self.params.img_shape)
-        outline_augment = DiffAugmentLayer()(outline_input)
+            x = Conv2D(ndf * 2, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
+            x = InstanceNormalization()(x)
+            x = LeakyReLU(alpha=0.2)(x)
 
-        types_input = Input(shape=(self.num_classes,))
-        types_embedding = Dense(img_shape[0] * img_shape[1] * 1)(types_input)
-        types_embedding = Reshape((img_shape[0], img_shape[1], 1))(types_embedding)
+            x = Conv2D(ndf * 4, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
+            x = InstanceNormalization()(x)
+            x = LeakyReLU(alpha=0.2)(x)
 
-        model_input = Multiply()([image_augment, outline_augment, types_embedding])
+            x = Conv2D(ndf * 8, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
+            x = InstanceNormalization()(x)
+            x = LeakyReLU(alpha=0.2)(x)
+            return x
 
-        x = Conv2D(ndf, kernel_size=5, strides=2, padding="same", use_bias=False)(model_input)
-        x = LeakyReLU(alpha=0.2)(x)
+        types_input = Input(shape=(self.num_classes,), name="types input")
+        types = Dense(img_shape[0] * img_shape[1] * img_shape[2])(types_input)
+        types = Reshape(img_shape)(types)
 
-        x = Conv2D(ndf * 2, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = InstanceNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
+        image_input = Input(shape=img_shape, name="image input")
 
-        x = Conv2D(ndf * 4, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = InstanceNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
+        image = DiffAugmentLayer()(image_input)
+        image = Concatenate()([image, types])
+        image = convolutions(image)
 
-        x = Conv2D(ndf * 8, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
+        outline_input = Input(shape=self.params.img_shape, name="outline input")
+        # outline = DiffAugmentLayer()(outline_input)
+        # outline = convolutions(outline)
+
+
+        x = Conv2D(ndf * 10, kernel_size=3, strides=1, padding="same", use_bias=False)(image)
         x = InstanceNormalization()(x)
         x = LeakyReLU(alpha=0.2)(x)
 
@@ -210,6 +209,8 @@ class PokemonModel(Model):
 
         model = tf.keras.Model([image_input, types_input, outline_input], x, name="discriminator")
         model.summary(line_length=200)
+        f = "/mnt/e/experiments/discriminator.jpg"
+        tf.keras.utils.plot_model(model, to_file=f, show_shapes=True, dpi=64)
         return model
 
     def build_gan(self, generator, discriminator):
@@ -253,14 +254,6 @@ class PokemonExperiment(Experiment):
         return self.images, self.labels
 
     def get_random_labels(self, n: int):
-        # random_indexes = np.random.randint(0, len(self.labels), n)
-        # get a random pokemon/type label and then generate the outline
-        # The outline should align with the pokemon type since the model is trained that way
-        # pokemon = self.images[random_indexes]
-        # types = self.labels[random_indexes]
-        # outlines = np.array([self.create_outline(x) for x in pokemon])
-        # return types, outlines
-
         params = copy(self.get_mutable_params()[0])
         params.batch_size = n
         dataset = tf.data.Dataset.from_tensor_slices(self.get_data())
@@ -312,7 +305,7 @@ class PokemonExperiment(Experiment):
             batch_size=128,
             adam_b1=0.5,
             iterations=100000,
-            sample_interval=20,
+            sample_interval=10,
             discriminator_turns=1,
             generator_turns=1,
             checkpoint_interval=200,
@@ -322,7 +315,7 @@ class PokemonExperiment(Experiment):
         return schedule
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_conditional_types_outline"
+        name = "pokemon_conditional_types_outline2"
 
         exp_dir = "EXP_DIR"
         if exp_dir in os.environ:

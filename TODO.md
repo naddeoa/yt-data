@@ -1,6 +1,7 @@
 
 # To try
 - Label custom categories and make the discriminator predict them as well, include them in the loss
+- BERT to condition on the pokemon descriptions
 - DiffAugment https://arxiv.org/pdf/2006.10738.pdf
 - SpectralNorm with BCE, and then WGAN https://arxiv.org/pdf/1802.05957.pdf
 - Use Adamw to save memory

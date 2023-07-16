@@ -53,79 +53,29 @@ ngf = 64
 ndf = 64
 
 
-class TileLayer(tf.keras.layers.Layer):
-    def __init__(self, tiles):
-        super(TileLayer, self).__init__()
-        self.tiles = tiles
-
-    def build(self, input_shape):
-        pass
-
-    def call(self, inputs):
-        return tf.tile(inputs, self.tiles)
-
-
-class OutlineLayer(tf.keras.layers.Layer):
-    def __init__(self):
-        super(OutlineLayer, self).__init__()
-
-    def build(self, input_shape):
-        pass
-
-    def call(self, image):
-        upper = tf.random.uniform(shape=[], minval=100, maxval=700, dtype=tf.int32)
-        return self.create_outline_tensor(image, upper=upper)
-
-    def create_outline(self, image: np.ndarray, upper=255, lower=None) -> np.ndarray:
-        """
-        image: numpy array that has been normalized to -1,1
-        return: numpy array of an outline, noramlized to -1,1, with the same height and width
-        """
-        # Will result in outlines of varying detail
-        image = unnormalize_image(image)
-        # thresholds = [10, 100, 400, 800, 1000]
-        if lower is None:
-            lower = upper // 3
-
-        edges: np.ndarray = cv2.bitwise_not(cv2.Canny(image, threshold1=lower, threshold2=upper))
-        edges = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-
-        assert edges.shape == image.shape
-        return normalize_image(edges)
-
-    def create_outline_tensor(self, image: tf.Tensor, upper=255, lower=None) -> tf.Tensor:
-        outline = self.create_outline(image.numpy(), upper=upper.numpy(), lower=lower)
-        tensor: tf.Tensor = tf.convert_to_tensor(outline, dtype=tf.float32)
-        return tensor
-
-
 class PokemonModel(Model):
     def __init__(self, params: HyperParams, mparams: MutableHyperParams, vocab: List[str]) -> None:
         super().__init__(params, mparams)
-        # self.vocab = vocab
         self.num_classes = len(vocab) + 1  # 18 pokemon types plus an OOV token
 
     def build_generator(self, z_dim):
         noise_input = Input(shape=(z_dim,))
-        noise = Dense(8 * 8 * ngf * 8)(noise_input)
-        noise = Reshape((8, 8, ngf * 8))(noise)
-
         types_input = Input(shape=(self.num_classes,))
-        types = Dense(8 * 8 * ngf * 8)(types_input)
-        types = Reshape((8, 8, ngf * 8))(types)
 
-        x = Multiply()([noise, types])
+        x = Concatenate()([noise_input, types_input])
+        x = Dense(8 * 8 * ngf * 8)(x)
+        x = Reshape((8, 8, ngf * 8))(x)
 
         x = Conv2DTranspose(ngf * 4, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = BatchNormalization()(x)
+        x = InstanceNormalization()(x)
         x = LeakyReLU()(x)
 
         x = Conv2DTranspose(ngf * 2, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = BatchNormalization()(x)
+        x = InstanceNormalization()(x)
         x = LeakyReLU()(x)
 
         x = Conv2DTranspose(ngf, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = BatchNormalization()(x)
+        x = InstanceNormalization()(x)
         x = LeakyReLU()(x)
 
         x = Conv2DTranspose(3, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
@@ -134,38 +84,57 @@ class PokemonModel(Model):
 
         model = tf.keras.Model([noise_input, types_input], x, name="generator")
         model.summary(line_length=200)
+        f = "/mnt/e/experiments/generator.jpg"
+        tf.keras.utils.plot_model(model, to_file=f, show_shapes=True, dpi=64)
         return model
 
     def build_discriminator(self, img_shape=(128, 128, 3)):
-        image_input = Input(shape=img_shape)
-        image_augment = DiffAugmentLayer()(image_input)
+        image_input = Input(shape=img_shape, name="image_input")
+        image = DiffAugmentLayer()(image_input)
 
-        types_input = Input(shape=(self.num_classes,))
-        types_embedding = Dense(img_shape[0] * img_shape[1] * 1)(types_input)
-        types_embedding = Reshape((img_shape[0], img_shape[1], 1))(types_embedding)
+        types_input = Input(shape=(self.num_classes,), name="types_input")
+        types = Dense(img_shape[0] * img_shape[1] * 1)(types_input)
+        types = Reshape((img_shape[0], img_shape[1], 1))(types)
 
-        model_input = Multiply()([image_augment, types_embedding])
+        def block(input_x, f: int, layers: int = 0, normalize_first: bool = True):
+            # block_model = Sequential()
+            # block_model.add(Conv2D(ndf * f, kernel_size=5, strides=2, padding="same", use_bias=False))
+            # if normalize_first:
+            #     block_model.add(InstanceNormalization())
+            # for _ in range(layers):
+            #     block_model.add(Conv2D(ndf * f, kernel_size=5, strides=1, padding="same", use_bias=False))
+            #     block_model.add(InstanceNormalization())
+            #     block_model.add(Activation(gelu))
+            # return block_model(input_x)
 
-        x = Conv2D(ndf, kernel_size=5, strides=2, padding="same", use_bias=False)(model_input)
-        x = LeakyReLU(alpha=0.2)(x)
 
-        x = Conv2D(ndf * 2, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = InstanceNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
+            x = Conv2D(ndf * f, kernel_size=5, strides=2, padding="same", use_bias=False, name=f"conv_{f}")(input_x)
+            if normalize_first:
+                x = InstanceNormalization(name=f"instance_norm_{f}")(x)
+            x = Activation(gelu, name=f"gelu_{f}")(x)
 
-        x = Conv2D(ndf * 4, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = InstanceNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
+            for i in range(1, layers+1):
+                x = Conv2D(ndf * f, kernel_size=5, strides=1, padding="same", use_bias=False, name=f"conv_{f}_{i}")(x)
+                x = InstanceNormalization(name=f"instance_norm_{f}_{i}")(x)
+                x = Activation(gelu, name=f"gelu_{f}_{i}")(x)
 
-        x = Conv2D(ndf * 8, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = InstanceNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
+            return x
+
+
+        model_input = Concatenate()([image, types])
+
+        x = block(model_input, f=1, layers=3, normalize_first=False)
+        x = block(x, f=2, layers=3)
+        x = block(x, f=4, layers=3)
+        x = block(x, f=8, layers=3)
 
         x = Flatten()(x)
         x = Dense(1)(x)
 
         model = tf.keras.Model([image_input, types_input], x, name="discriminator")
         model.summary(line_length=200)
+        f = "/mnt/e/experiments/discriminator.jpg"
+        tf.keras.utils.plot_model(model, to_file=f, show_shapes=True, dpi=64)
         return model
 
     def build_gan(self, generator, discriminator):
@@ -219,20 +188,20 @@ class PokemonExperiment(Experiment):
         schedule[0, 100000] = MutableHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
-            batch_size=128,
+            batch_size=8,
             adam_b1=0.5,
             iterations=100000,
-            sample_interval=20,
+            sample_interval=5,
             discriminator_turns=1,
             generator_turns=1,
-            checkpoint_interval=200,
+            checkpoint_interval=100,
             # gradient_penalty_factor=20,
         )
 
         return schedule
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_conditional_types"
+        name = "pokemon_conditional_types_deep_3"
 
         exp_dir = "EXP_DIR"
         if exp_dir in os.environ:
