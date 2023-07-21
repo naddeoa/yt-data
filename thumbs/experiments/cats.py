@@ -9,7 +9,7 @@ from thumbs.experiment import Experiment
 from thumbs.loss import Loss
 from thumbs.data import get_cat_data
 from thumbs.params import HyperParams, MutableHyperParams
-from thumbs.model.model import Model, BuiltModel
+from thumbs.model.model import GanModel, BuiltModel
 
 from keras.models import Sequential
 from keras.layers import Dense, Reshape, Conv2DTranspose, Flatten, LeakyReLU
@@ -41,7 +41,7 @@ infinity = float("inf")
 ngf = 64 
 ndf = 64
 
-class CatModel(Model):
+class CatModel(GanModel):
     def build_generator(self, z_dim):
         model = Sequential(name="generator")
 
@@ -138,7 +138,7 @@ class CatExperiment(Experiment):
             similarity_penalty=20,
         )
 
-    def get_model(self, mparams: MutableHyperParams) -> Model:
+    def get_model(self, mparams: MutableHyperParams) -> GanModel:
         return CatModel(self.params, mparams)
 
 

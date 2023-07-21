@@ -5,7 +5,7 @@ import os
 from rangedict import RangeDict
 import numpy as np
 from thumbs.train import Train, load_iterations
-from thumbs.model.model import Model, BuiltModel
+from thumbs.model.model import GanModel, BuiltModel
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Iterator, Union, Optional
 from scipy.ndimage import rotate
@@ -33,7 +33,7 @@ class Experiment(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_model(self, mparams: MutableHyperParams) -> Model:
+    def get_model(self, mparams: MutableHyperParams) -> GanModel:
         raise NotImplementedError()
 
     @abstractmethod

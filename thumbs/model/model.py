@@ -2,9 +2,10 @@ from abc import ABC, abstractmethod
 import tensorflow as tf
 from thumbs.params import HyperParams, MutableHyperParams
 from keras.optimizers import Adam
+from keras.optimizers.adamw import AdamW
 from dataclasses import dataclass
 from typing import Optional
-
+import tensorflow as tf
 
 @dataclass
 class BuiltModel:
@@ -15,11 +16,13 @@ class BuiltModel:
     generator_optimizer: tf.keras.optimizers.Optimizer
 
 
-class Model(ABC):
+class GanModel(ABC):
     def __init__(self, params: HyperParams, mparams: MutableHyperParams, loss="binary_crossentropy") -> None:
         self.params = params
         self.mparams = mparams
         self.loss = loss
+        self.d_clipnorm: Optional[float] = mparams.d_clipnorm
+        self.g_clipnorm: Optional[float] = mparams.g_clipnorm
 
     @abstractmethod
     def build_discriminator(self, img_shape):
@@ -35,7 +38,7 @@ class Model(ABC):
 
     def build(self) -> BuiltModel:
         discriminator = self.build_discriminator(self.params.img_shape)
-        discriminator_optimizer = Adam(learning_rate=self.mparams.dis_learning_rate, beta_1=self.mparams.adam_b1)
+        discriminator_optimizer = AdamW(learning_rate=self.mparams.dis_learning_rate, beta_1=self.mparams.adam_b1, clipnorm=self.d_clipnorm)
         discriminator.compile(
             loss=self.loss,
             optimizer=discriminator_optimizer,
@@ -49,7 +52,7 @@ class Model(ABC):
         # after compiling the gan
         discriminator.trainable = False
         gan = self.build_gan(generator, discriminator)
-        generator_optimizer = Adam(learning_rate=self.mparams.gen_learning_rate, beta_1=self.mparams.adam_b1)
+        generator_optimizer = AdamW(learning_rate=self.mparams.gen_learning_rate, beta_1=self.mparams.adam_b1, clipnorm=self.g_clipnorm)
         if gan is not None:
             gan.compile(loss=self.loss, optimizer=generator_optimizer)
         discriminator.trainable = True

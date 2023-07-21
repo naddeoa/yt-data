@@ -59,24 +59,30 @@ class PokemonModel(Model):
         self.num_classes = len(vocab) + 1  # 18 pokemon types plus an OOV token
 
     def build_generator(self, z_dim):
+
+        def block(input_x, f: int, layers: int = 0):
+            x = Conv2DTranspose(ndf * f, kernel_size=5, strides=2, padding="same", use_bias=False, name=f"tconv_{f}")(input_x)
+            x = InstanceNormalization(name=f"instance_norm_{f}")(x)
+            x = Activation(gelu, name=f"gelu_{f}")(x)
+
+            for i in range(1, layers + 1):
+                x = Conv2DTranspose(ndf * f, kernel_size=5, strides=1, padding="same", use_bias=False, name=f"tconv_{f}_{i}")(x)
+                x = InstanceNormalization(name=f"instance_norm_{f}_{i}")(x)
+                x = Activation(gelu, name=f"gelu_{f}_{i}")(x)
+
+            return x
+
         noise_input = Input(shape=(z_dim,))
         types_input = Input(shape=(self.num_classes,))
 
         x = Concatenate()([noise_input, types_input])
-        x = Dense(8 * 8 * ngf * 8)(x)
-        x = Reshape((8, 8, ngf * 8))(x)
+        x = Dense(4 * 4 * ngf * 8)(x)
+        x = Reshape((4, 4, ngf * 8))(x)
 
-        x = Conv2DTranspose(ngf * 4, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = InstanceNormalization()(x)
-        x = LeakyReLU()(x)
-
-        x = Conv2DTranspose(ngf * 2, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = InstanceNormalization()(x)
-        x = LeakyReLU()(x)
-
-        x = Conv2DTranspose(ngf, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
-        x = InstanceNormalization()(x)
-        x = LeakyReLU()(x)
+        x =  block(x, 8, 2)
+        x =  block(x, 4, 2)
+        x =  block(x, 2, 2)
+        x =  block(x, 1, 2)
 
         x = Conv2DTranspose(3, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
         x = Activation("tanh")(x)
@@ -88,7 +94,21 @@ class PokemonModel(Model):
         tf.keras.utils.plot_model(model, to_file=f, show_shapes=True, dpi=64)
         return model
 
-    def build_discriminator(self, img_shape=(128, 128, 3)):
+    def build_discriminator(self, img_shape):
+
+        def block(input_x, f: int, layers: int = 0, normalize_first: bool = True):
+            x = Conv2D(ndf * f, kernel_size=5, strides=2, padding="same", use_bias=False, name=f"conv_{f}")(input_x)
+            if normalize_first:
+                x = InstanceNormalization(name=f"instance_norm_{f}")(x)
+            x = Activation(gelu, name=f"gelu_{f}")(x)
+
+            for i in range(1, layers + 1):
+                x = Conv2D(ndf * f, kernel_size=5, strides=1, padding="same", use_bias=False, name=f"conv_{f}_{i}")(x)
+                x = InstanceNormalization(name=f"instance_norm_{f}_{i}")(x)
+                x = Activation(gelu, name=f"gelu_{f}_{i}")(x)
+
+            return x
+
         image_input = Input(shape=img_shape, name="image_input")
         image = DiffAugmentLayer()(image_input)
 
@@ -96,37 +116,12 @@ class PokemonModel(Model):
         types = Dense(img_shape[0] * img_shape[1] * 1)(types_input)
         types = Reshape((img_shape[0], img_shape[1], 1))(types)
 
-        def block(input_x, f: int, layers: int = 0, normalize_first: bool = True):
-            # block_model = Sequential()
-            # block_model.add(Conv2D(ndf * f, kernel_size=5, strides=2, padding="same", use_bias=False))
-            # if normalize_first:
-            #     block_model.add(InstanceNormalization())
-            # for _ in range(layers):
-            #     block_model.add(Conv2D(ndf * f, kernel_size=5, strides=1, padding="same", use_bias=False))
-            #     block_model.add(InstanceNormalization())
-            #     block_model.add(Activation(gelu))
-            # return block_model(input_x)
-
-
-            x = Conv2D(ndf * f, kernel_size=5, strides=2, padding="same", use_bias=False, name=f"conv_{f}")(input_x)
-            if normalize_first:
-                x = InstanceNormalization(name=f"instance_norm_{f}")(x)
-            x = Activation(gelu, name=f"gelu_{f}")(x)
-
-            for i in range(1, layers+1):
-                x = Conv2D(ndf * f, kernel_size=5, strides=1, padding="same", use_bias=False, name=f"conv_{f}_{i}")(x)
-                x = InstanceNormalization(name=f"instance_norm_{f}_{i}")(x)
-                x = Activation(gelu, name=f"gelu_{f}_{i}")(x)
-
-            return x
-
-
         model_input = Concatenate()([image, types])
 
-        x = block(model_input, f=1, layers=3, normalize_first=False)
-        x = block(x, f=2, layers=3)
-        x = block(x, f=4, layers=3)
-        x = block(x, f=8, layers=3)
+        x = block(model_input, f=1, layers=2, normalize_first=False)
+        x = block(x, f=2, layers=2)
+        x = block(x, f=4, layers=2)
+        x = block(x, f=8, layers=2)
 
         x = Flatten()(x)
         x = Dense(1)(x)
@@ -188,20 +183,20 @@ class PokemonExperiment(Experiment):
         schedule[0, 100000] = MutableHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
-            batch_size=8,
+            batch_size=128,
             adam_b1=0.5,
             iterations=100000,
-            sample_interval=5,
+            sample_interval=20,
             discriminator_turns=1,
             generator_turns=1,
-            checkpoint_interval=100,
+            checkpoint_interval=200,
             # gradient_penalty_factor=20,
         )
 
         return schedule
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_conditional_types_deep_3"
+        name = "pokemon_conditional_types_deep_2"
 
         exp_dir = "EXP_DIR"
         if exp_dir in os.environ:

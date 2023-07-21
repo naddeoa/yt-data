@@ -393,8 +393,6 @@ class TrainWassersteinGP(Train):
         # Get the gradients w.r.t the generator loss
         gen_gradient = tape.gradient(g_loss, self.generator.trainable_variables)
 
-        if self.params.generator_clip_gradients_norm is not None:
-            gen_gradient = [tf.clip_by_norm(grad, self.params.generator_clip_gradients_norm) for grad in gen_gradient]
         # Update the weights of the generator using the generator optimizer
         self.generator_optimizer.apply_gradients(zip(gen_gradient, self.generator.trainable_variables))
         return g_loss, other
@@ -459,9 +457,6 @@ class TrainBCE(Train):
 
         # Calculate the gradients of the loss with respect to the generator's weights
         grads = tape.gradient(loss, self.generator.trainable_weights)
-
-        if self.params.generator_clip_gradients_norm is not None:
-            grads = [tf.clip_by_norm(grad, self.params.generator_clip_gradients_norm) for grad in grads]
 
         # Update the weights of the generator
         self.generator_optimizer.apply_gradients(zip(grads, self.generator.trainable_weights))
@@ -528,9 +523,6 @@ class TrainBCEPatch(Train):
 
         # Calculate the gradients of the loss with respect to the generator's weights
         grads = tape.gradient(loss, self.generator.trainable_weights)
-
-        if self.params.generator_clip_gradients_norm is not None:
-            grads = [tf.clip_by_norm(grad, self.params.generator_clip_gradients_norm) for grad in grads]
 
         # Update the weights of the generator
         self.generator_optimizer.apply_gradients(zip(grads, self.generator.trainable_weights))

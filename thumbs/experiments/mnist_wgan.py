@@ -9,7 +9,7 @@ from thumbs.experiment import Experiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_data
 from thumbs.params import HyperParams, MutableHyperParams
-from thumbs.model.model import Model, BuiltModel
+from thumbs.model.model import GanModel, BuiltModel
 
 from keras.models import Sequential
 from keras.layers import Dense, Reshape, Conv2DTranspose, Flatten, LeakyReLU
@@ -38,7 +38,7 @@ from thumbs.train import Train, TrainBCE, TrainWassersteinGP
 infinity = float("inf")
 
 
-class MnistModel(Model):
+class MnistModel(GanModel):
     def build_generator(self, z_dim):
 
         model = Sequential()
@@ -180,7 +180,7 @@ class MnistExperiment(Experiment):
             similarity_penalty=20,
         )
 
-    def get_model(self, mparams: MutableHyperParams) -> Model:
+    def get_model(self, mparams: MutableHyperParams) -> GanModel:
         return MnistModel(self.params, mparams)
 
 

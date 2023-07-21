@@ -12,7 +12,7 @@ from thumbs.experiment import Experiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_and_types, normalize_image, unnormalize_image
 from thumbs.params import HyperParams, MutableHyperParams
-from thumbs.model.model import Model, BuiltModel
+from thumbs.model.model import GanModel, BuiltModel
 
 from tensorflow_addons.layers import InstanceNormalization
 from keras.models import Sequential
@@ -99,7 +99,7 @@ class OutlineLayer(tf.keras.layers.Layer):
         return tensor
 
 
-class PokemonModel(Model):
+class PokemonModel(GanModel):
     def __init__(self, params: HyperParams, mparams: MutableHyperParams, vocab: List[str]) -> None:
         super().__init__(params, mparams)
         # self.vocab = vocab
@@ -254,7 +254,7 @@ class PokemonExperiment(Experiment):
             similarity_penalty=20,
         )
 
-    def get_model(self, mparams: MutableHyperParams) -> Model:
+    def get_model(self, mparams: MutableHyperParams) -> GanModel:
         return PokemonModel(self.params, mparams, self.vocab)
 
 

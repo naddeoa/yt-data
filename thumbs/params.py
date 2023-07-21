@@ -35,6 +35,8 @@ class MutableHyperParams:
     l1_loss_factor: float = 0
     l2_loss_factor: float = 0
     discriminator_ones_zeroes_shape: tuple = ()
+    g_clipnorm: Optional[float] = None
+    d_clipnorm: Optional[float] = None
 
     def __post_init__(self):
         if self.discriminator_ones_zeroes_shape == ():

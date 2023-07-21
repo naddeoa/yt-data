@@ -12,7 +12,7 @@ from thumbs.experiment import Experiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_data256, normalize_image, unnormalize_image
 from thumbs.params import HyperParams, MutableHyperParams
-from thumbs.model.model import Model, BuiltModel
+from thumbs.model.model import GanModel, BuiltModel
 
 from tensorflow_addons.layers import InstanceNormalization
 from keras.models import Sequential
@@ -48,7 +48,7 @@ from thumbs.train import Train, TrainBCE, TrainWassersteinGP, TrainBCEPatch
 ngf = 64
 ndf = 128
 
-class PokemonModel(Model):
+class PokemonModel(GanModel):
     def build_generator(self, z_dim):
         model = Sequential(name="generator")
 
@@ -177,7 +177,7 @@ class PokemonExperiment(Experiment):
             similarity_penalty=0,
         )
 
-    def get_model(self, mparams: MutableHyperParams) -> Model:
+    def get_model(self, mparams: MutableHyperParams) -> GanModel:
         return PokemonModel(self.params, mparams)
 
 
