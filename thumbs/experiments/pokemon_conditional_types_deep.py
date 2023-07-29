@@ -12,7 +12,7 @@ from thumbs.experiment import Experiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_and_types, normalize_image, unnormalize_image
 from thumbs.params import HyperParams, MutableHyperParams
-from thumbs.model.model import Model, BuiltModel
+from thumbs.model.model import GanModel, BuiltModel
 
 from tensorflow_addons.layers import InstanceNormalization
 from keras.models import Sequential
@@ -53,13 +53,12 @@ ngf = 64
 ndf = 64
 
 
-class PokemonModel(Model):
+class PokemonModel(GanModel):
     def __init__(self, params: HyperParams, mparams: MutableHyperParams, vocab: List[str]) -> None:
         super().__init__(params, mparams)
         self.num_classes = len(vocab) + 1  # 18 pokemon types plus an OOV token
 
     def build_generator(self, z_dim):
-
         def block(input_x, f: int, layers: int = 0):
             x = Conv2DTranspose(ndf * f, kernel_size=5, strides=2, padding="same", use_bias=False, name=f"tconv_{f}")(input_x)
             x = InstanceNormalization(name=f"instance_norm_{f}")(x)
@@ -79,14 +78,13 @@ class PokemonModel(Model):
         x = Dense(4 * 4 * ngf * 8)(x)
         x = Reshape((4, 4, ngf * 8))(x)
 
-        x =  block(x, 8, 2)
-        x =  block(x, 4, 2)
-        x =  block(x, 2, 2)
-        x =  block(x, 1, 2)
+        x = block(x, 8, 2)
+        x = block(x, 4, 2)
+        x = block(x, 2, 2)
+        x = block(x, 1, 2)
 
         x = Conv2DTranspose(3, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
         x = Activation("tanh")(x)
-        x = DiffAugmentLayer()(x)
 
         model = tf.keras.Model([noise_input, types_input], x, name="generator")
         model.summary(line_length=200)
@@ -95,7 +93,6 @@ class PokemonModel(Model):
         return model
 
     def build_discriminator(self, img_shape):
-
         def block(input_x, f: int, layers: int = 0, normalize_first: bool = True):
             x = Conv2D(ndf * f, kernel_size=5, strides=2, padding="same", use_bias=False, name=f"conv_{f}")(input_x)
             if normalize_first:
@@ -131,10 +128,6 @@ class PokemonModel(Model):
         f = "/mnt/e/experiments/discriminator.jpg"
         tf.keras.utils.plot_model(model, to_file=f, show_shapes=True, dpi=64)
         return model
-
-    def build_gan(self, generator, discriminator):
-        # Can't really do this easily because they both take multiple inputs
-        return None
 
 
 class PokemonExperiment(Experiment):
@@ -196,29 +189,15 @@ class PokemonExperiment(Experiment):
         return schedule
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_conditional_types_deep_2"
-
-        exp_dir = "EXP_DIR"
-        if exp_dir in os.environ:
-            base_dir = os.environ["EXP_DIR"]
-        else:
-            base_dir = "/mnt/e/experiments"
-
         return HyperParams(
             latent_dim=100,
             img_shape=(128, 128, 3),
-            weight_path=f"{base_dir}/{name}/weights",
-            checkpoint_path=f"{base_dir}/{name}/checkpoints",
-            prediction_path=f"{base_dir}/{name}/predictions",
-            iteration_checkpoints_path=f"{base_dir}/{name}/iteration_checkpoints",
-            loss_path=f"{base_dir}/{name}/loss",
-            accuracy_path=f"{base_dir}/{name}/accuracy",
-            iteration_path=f"{base_dir}/{name}/iteration",
+            name="pokemon_conditional_types_deep_2",
             similarity_threshold=0.0,
             similarity_penalty=20,
         )
 
-    def get_model(self, mparams: MutableHyperParams) -> Model:
+    def get_model(self, mparams: MutableHyperParams) -> GanModel:
         return PokemonModel(self.params, mparams, self.vocab)
 
 

@@ -1,21 +1,61 @@
 from dataclasses import dataclass
+import os
 from typing import Tuple, Optional
 
 
 @dataclass
 class HyperParams:
     latent_dim: int  # = 150
+    name: str  # = "pokemon_deep_1L_clipped-0.5_gp-0"
+
     img_shape: Tuple[int, int, int]  # = (128, 128, 3)
-    weight_path: str  # = "./experiments/model_name/weights"
-    prediction_path: str  # = "./experiments/model_name/predictions"
-    iteration_path: str  # = "./experiments/model_name/iteration"
-    iteration_checkpoints_path: str  # = "./experiments/model_name/iteration"
-    loss_path: str  # = "./experiments/model_name/loss"
-    accuracy_path: str  # = "./experiments/model_name/accuracy"
     similarity_threshold: float  # = 0.0
     similarity_penalty: float  # = 10.0
-    checkpoint_path: str  # = "./experiments/model_name/checkpoint"
     generator_clip_gradients_norm: Optional[float] = None  # = None
+    base_dir: str = os.environ["EXP_DIR"] if "EXP_DIR" in os.environ else "/mnt/e/experiments"
+
+    @property
+    def gen_weight_path(self):
+        return f"{self.base_dir}/{self.name}/weights_gen"
+
+    @property
+    def dis_weight_path(self):
+        return f"{self.base_dir}/{self.name}/weights_dis"
+
+    @property
+    def prediction_path(self):
+        return f"{self.base_dir}/{self.name}/predictions"
+
+    @property
+    def iteration_path(self):
+        return f"{self.base_dir}/{self.name}/iteration"
+
+    @property
+    def iteration_checkpoints_path(self):
+        return f"{self.base_dir}/{self.name}/iteration_checkpoints"
+
+    @property
+    def loss_path(self):
+        return f"{self.base_dir}/{self.name}/loss"
+
+    @property
+    def accuracy_path(self):
+        return f"{self.base_dir}/{self.name}/accuracy"
+
+    @property
+    def checkpoint_path(self):
+        return f"{self.base_dir}/{self.name}/checkpoints"
+
+    @property
+    def gen_diagram_path(self):
+        return f"{self.base_dir}/{self.name}/generator.jpg"
+
+    @property
+    def dis_diagram_path(self):
+        return f"{self.base_dir}/{self.name}/discriminator.jpg"
+
+    def __post_init__(self):
+        os.makedirs(f"{self.base_dir}/{self.name}", exist_ok=True)
 
 
 @dataclass

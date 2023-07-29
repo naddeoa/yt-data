@@ -130,7 +130,6 @@ class PokemonModel(GanModel):
 
         x = Conv2DTranspose(3, kernel_size=5, strides=2, padding="same", use_bias=False)(x)
         x = Activation("tanh")(x)
-        x = DiffAugmentLayer()(x)
 
         model = tf.keras.Model([noise_input, types_input], x, name="generator")
         model.summary(line_length=200)
@@ -232,24 +231,10 @@ class PokemonExperiment(Experiment):
         return schedule
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_conditional_types"
-
-        exp_dir = "EXP_DIR"
-        if exp_dir in os.environ:
-            base_dir = os.environ["EXP_DIR"]
-        else:
-            base_dir = "/mnt/e/experiments"
-
         return HyperParams(
             latent_dim=100,
             img_shape=(128, 128, 3),
-            weight_path=f"{base_dir}/{name}/weights",
-            checkpoint_path=f"{base_dir}/{name}/checkpoints",
-            prediction_path=f"{base_dir}/{name}/predictions",
-            iteration_checkpoints_path=f"{base_dir}/{name}/iteration_checkpoints",
-            loss_path=f"{base_dir}/{name}/loss",
-            accuracy_path=f"{base_dir}/{name}/accuracy",
-            iteration_path=f"{base_dir}/{name}/iteration",
+            name = "pokemon_conditional_types",
             similarity_threshold=0.0,
             similarity_penalty=20,
         )

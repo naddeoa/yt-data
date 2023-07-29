@@ -48,6 +48,7 @@ from thumbs.train import Train, TrainBCE, TrainWassersteinGP, TrainBCEPatch
 ngf = 64
 ndf = 128
 
+
 class PokemonModel(GanModel):
     def build_generator(self, z_dim):
         model = Sequential(name="generator")
@@ -72,17 +73,17 @@ class PokemonModel(GanModel):
         # model.add(LeakyReLU())
         # # 8x8x512
 
-        model.add(Conv2DTranspose(512, kernel_size=4, strides=2, padding='same', use_bias=False))
+        model.add(Conv2DTranspose(512, kernel_size=4, strides=2, padding="same", use_bias=False))
         model.add(BatchNormalization())
         model.add(LeakyReLU())
         # 16x16x512
 
-        model.add(Conv2DTranspose(256, kernel_size=4, strides=2, padding='same', use_bias=False))
+        model.add(Conv2DTranspose(256, kernel_size=4, strides=2, padding="same", use_bias=False))
         model.add(BatchNormalization())
         model.add(LeakyReLU())
         # 32x32x256
 
-        model.add(Conv2DTranspose(128, kernel_size=4, strides=2, padding='same', use_bias=False))
+        model.add(Conv2DTranspose(128, kernel_size=4, strides=2, padding="same", use_bias=False))
         model.add(BatchNormalization())
         model.add(LeakyReLU())
         # 64x64x128
@@ -98,15 +99,15 @@ class PokemonModel(GanModel):
         model.add(Conv2D(ndf, kernel_size=4, strides=2, padding="same", use_bias=False, input_shape=img_shape))
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(ndf*2, kernel_size=4, strides=2, padding="same", use_bias=False))
+        model.add(Conv2D(ndf * 2, kernel_size=4, strides=2, padding="same", use_bias=False))
         model.add(InstanceNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(ndf*4, kernel_size=4, strides=2, padding="same", use_bias=False))
+        model.add(Conv2D(ndf * 4, kernel_size=4, strides=2, padding="same", use_bias=False))
         model.add(InstanceNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(ndf*8, kernel_size=4, strides=2, padding="same", use_bias=False))
+        model.add(Conv2D(ndf * 8, kernel_size=4, strides=2, padding="same", use_bias=False))
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Flatten())
@@ -117,7 +118,6 @@ class PokemonModel(GanModel):
 
     def build_gan(self, generator, discriminator) -> None:
         return None
-
 
 
 class PokemonExperiment(Experiment):
@@ -154,26 +154,11 @@ class PokemonExperiment(Experiment):
         return schedule
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_l1_wgan_from_start"
-
-        exp_dir = "EXP_DIR"
-        if exp_dir in os.environ:
-            base_dir = os.environ["EXP_DIR"]
-        else:
-            base_dir = "/mnt/e/experiments"
-
         return HyperParams(
             latent_dim=100,
             img_shape=(128, 128, 3),
-            weight_path=f"{base_dir}/{name}/weights",
-            checkpoint_path=f"{base_dir}/{name}/checkpoints",
-            prediction_path=f"{base_dir}/{name}/predictions",
-            iteration_checkpoints_path=f"{base_dir}/{name}/iteration_checkpoints",
-            loss_path=f"{base_dir}/{name}/loss",
-            accuracy_path=f"{base_dir}/{name}/accuracy",
-            iteration_path=f"{base_dir}/{name}/iteration",
+            name="pokemon_l1_wgan_from_start",
             similarity_threshold=0.0,
-            # generator_clip_gradients_norm=1,
             similarity_penalty=0,
         )
 

@@ -1,8 +1,14 @@
 
 # To try
+- Add dense layers at the end of the convolutions for global view
+- Skip connections in the deeper models for the strdie=1 layers
+- R1 penalty
+- Replay buffer
+- Hinge loss instead of BCE/EM
 - SpectralNorm with BCE, and then WGAN https://arxiv.org/pdf/1802.05957.pdf
 - initializer = RandomNormal(mean=0., stddev=0.01), Conv2d(kernel_initializer=initializer)
-- Label custom categories and make the discriminator predict them as well, include them in the loss
+- consistency regularizatoin
+- Multiclass discriminator - Label custom categories and make the discriminator predict them as well, include them in the loss
 - BERT to condition on the pokemon descriptions
 - Use much smaller latent space vector. This guy used 16 and that was suffucient because of how small pokemon datasets are.
     - https://towardsdatascience.com/i-generated-thousands-of-new-pokemon-using-ai-f8f09dc6477e
@@ -13,6 +19,8 @@
     - No obvious difference
 - DONE DiffAugment https://arxiv.org/pdf/2006.10738.pdf
     - Seems a little better than just doing data augmentation outside of the model
+- DONE Inception score
+    - in the evaluation notebook
 
 
 # Questions

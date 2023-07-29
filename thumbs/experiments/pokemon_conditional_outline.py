@@ -53,7 +53,7 @@ ndf = 128
 
 class PokemonSkipModel(GanModel):
     def __init__(self, params: HyperParams, mparams: MutableHyperParams) -> None:
-        super().__init__(params, mparams, tf.keras.losses.BinaryCrossentropy(from_logits=True))
+        super().__init__(params, mparams)
 
     def build_generator(self, z_dim):
         #  TODO maybe add this back in somehow. Lets see how it goes without it
@@ -184,7 +184,7 @@ class PokemonExperiment(Experiment):
 
     def create_outline_tensor(self, image: tf.Tensor, upper=255, lower=None) -> tf.Tensor:
         outline = self.create_outline(image.numpy(), upper=upper.numpy(), lower=lower)
-        tensor: tf.Tensor  = tf.convert_to_tensor(outline, dtype=tf.float32)
+        tensor: tf.Tensor = tf.convert_to_tensor(outline, dtype=tf.float32)
         return tensor
 
     def create_outline(self, image: np.ndarray, upper=255, lower=None) -> np.ndarray:
@@ -224,26 +224,11 @@ class PokemonExperiment(Experiment):
         return schedule
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_conditional_outline_noise"
-
-        exp_dir = "EXP_DIR"
-        if exp_dir in os.environ:
-            base_dir = os.environ["EXP_DIR"]
-        else:
-            base_dir = "/mnt/e/experiments"
-
         return HyperParams(
             latent_dim=100,
             img_shape=(128, 128, 3),
-            weight_path=f"{base_dir}/{name}/weights",
-            checkpoint_path=f"{base_dir}/{name}/checkpoints",
-            prediction_path=f"{base_dir}/{name}/predictions",
-            iteration_checkpoints_path=f"{base_dir}/{name}/iteration_checkpoints",
-            loss_path=f"{base_dir}/{name}/loss",
-            accuracy_path=f"{base_dir}/{name}/accuracy",
-            iteration_path=f"{base_dir}/{name}/iteration",
+            name="pokemon_conditional_outline_noise",
             similarity_threshold=0.0,
-            # generator_clip_gradients_norm=1,
             similarity_penalty=0,
         )
 

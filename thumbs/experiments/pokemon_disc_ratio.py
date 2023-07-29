@@ -38,25 +38,26 @@ from thumbs.train import Train, TrainWassersteinGP
 
 infinity = float("inf")
 
-ngf = 64 
+ngf = 64
 ndf = 64
+
 
 class PokemonModel(GanModel):
     def build_generator(self, z_dim):
         model = Sequential(name="generator")
 
         model.add(Reshape((1, 1, z_dim), input_shape=(z_dim,)))
-        model.add(Conv2DTranspose(ngf*4, kernel_size=6, strides=6, padding='valid'))
+        model.add(Conv2DTranspose(ngf * 4, kernel_size=6, strides=6, padding="valid"))
 
-        model.add(Conv2DTranspose(ngf*3, kernel_size=5, strides=5, padding='valid'))
+        model.add(Conv2DTranspose(ngf * 3, kernel_size=5, strides=5, padding="valid"))
         model.add(BatchNormalization())
         model.add(LeakyReLU())
 
-        model.add(Conv2DTranspose(ngf*2, kernel_size=5, strides=2, padding='valid'))
+        model.add(Conv2DTranspose(ngf * 2, kernel_size=5, strides=2, padding="valid"))
         model.add(BatchNormalization())
         model.add(LeakyReLU())
 
-        model.add(Conv2DTranspose(ngf, kernel_size=2, strides=1, padding='valid'))
+        model.add(Conv2DTranspose(ngf, kernel_size=2, strides=1, padding="valid"))
         model.add(BatchNormalization())
         model.add(LeakyReLU())
 
@@ -110,13 +111,14 @@ class PokemonExperiment(Experiment):
             discriminator_turns=10,
             generator_turns=1,
             checkpoint_interval=100,
-            gradient_penalty_factor=20
+            gradient_penalty_factor=20,
         )
-
 
         return schedule
 
-    def custom_agumentation(self, image: tf.Tensor, labels: Optional[tf.Tensor] = None) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
+    def custom_agumentation(
+        self, image: tf.Tensor, labels: Optional[tf.Tensor] = None
+    ) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
         """
         No zoom for this dataset since the pokemon are much closer to the edge of the frame
         """
@@ -129,24 +131,10 @@ class PokemonExperiment(Experiment):
         return image
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_disc_ratio"
-
-        exp_dir = 'EXP_DIR'
-        if exp_dir in os.environ:
-            base_dir = os.environ['EXP_DIR']
-        else:
-            base_dir = '/mnt/e/experiments'
-
         return HyperParams(
             latent_dim=100,
             img_shape=(128, 128, 3),
-            weight_path=f"{base_dir}/{name}/weights",
-            checkpoint_path=f"{base_dir}/{name}/checkpoints",
-            prediction_path=f"{base_dir}/{name}/predictions",
-            iteration_checkpoints_path=f"{base_dir}/{name}/iteration_checkpoints",
-            loss_path=f"{base_dir}/{name}/loss",
-            accuracy_path=f"{base_dir}/{name}/accuracy",
-            iteration_path=f"{base_dir}/{name}/iteration",
+            name="pokemon_disc_ratio",
             similarity_threshold=0.0,
             similarity_penalty=20,
         )
@@ -157,4 +145,3 @@ class PokemonExperiment(Experiment):
 
 if __name__ == "__main__":
     PokemonExperiment().start()
-

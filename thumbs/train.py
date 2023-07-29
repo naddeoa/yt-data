@@ -132,7 +132,6 @@ class Train(ABC):
         label_getter: LabelGetter = None,
         input_mapper: InputMapper = DefaultInputMapper(),
     ) -> None:
-        self.gan = built_model.gan
         self.mparams = mparams
         self.generator = built_model.generator
         self.label_getter = label_getter
@@ -171,11 +170,8 @@ class Train(ABC):
         raise NotImplementedError()
 
     def train(self, dataset: tf.data.Dataset, start_iter=0):
-        if self.gan is not None:
-            load_weights(self.gan, self.params.weight_path)
-        else:
-            load_weights(self.generator, f"{self.params.weight_path}_gen")
-            load_weights(self.discriminator, f"{self.params.weight_path}_dis")
+        load_weights(self.generator, self.params.gen_weight_path)
+        load_weights(self.discriminator, self.params.dis_weight_path)
 
         loss_dg: List[Tuple[float, float]] = []
 
@@ -253,11 +249,8 @@ class Train(ABC):
 
         if checkpoint_path is not None and checkpoint_interval is not None and (iteration) % checkpoint_interval == 0:
             save_iterations(f"{checkpoint_path}/{iteration}/iteration", iteration)
-            if self.gan is not None:
-                self.gan.save_weights(f"{checkpoint_path}/{iteration}/weights")
-            else:
-                self.generator.save_weights(f"{checkpoint_path}/{iteration}/weights_gen")
-                self.discriminator.save_weights(f"{checkpoint_path}/{iteration}/weights_dis")
+            self.generator.save_weights(f"{checkpoint_path}/{iteration}/weights_gen")
+            self.discriminator.save_weights(f"{checkpoint_path}/{iteration}/weights_dis")
 
             loss_file_name = self.params.loss_path.split("/")[-1]
             save_as_json(self.losses, f"{checkpoint_path}/{iteration}/{loss_file_name}")
@@ -266,11 +259,8 @@ class Train(ABC):
 
         if (iteration) % sample_interval == 0:
             # Save losses and accuracies so they can be plotted after training
-            if self.gan is not None:
-                self.gan.save_weights(self.params.weight_path)
-            else:
-                self.generator.save_weights(f"{self.params.weight_path}_gen")
-                self.discriminator.save_weights(f"{self.params.weight_path}_dis")
+            self.generator.save_weights(self.params.gen_weight_path)
+            self.discriminator.save_weights(self.params.dis_weight_path)
             save_iterations(self.params.iteration_path, iteration)
 
             self.losses.append(np.mean(loss_dg, axis=0).tolist())
@@ -353,9 +343,12 @@ class TrainWassersteinGP(Train):
             # Calculate the discriminator loss using the fake and real image logits
             d_cost, other = self.discriminator_loss(real_img=real_logits, fake_img=fake_logits)
             # Calculate the gradient penalty
-            gp = self.gradient_penalty(gen_imgs, data)
-            # Add the gradient penalty to the original discriminator loss
-            d_loss = d_cost + (gp * self.mparams.gradient_penalty_factor)
+            if self.mparams.gradient_penalty_factor > 0:
+                gp = self.gradient_penalty(gen_imgs, data) * self.mparams.gradient_penalty_factor
+            else:
+                gp = 0
+
+            d_loss = d_cost + gp
 
         # Get the gradients w.r.t the discriminator loss
         d_gradient = tape.gradient(d_loss, self.discriminator.trainable_variables)
@@ -402,18 +395,32 @@ class TrainBCE(Train):
     """
     BCE with an additional loss based on cosine similarity
     """
+
     def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         real = np.ones(self.mparams.discriminator_ones_zeroes_shape)
         fake = np.zeros((self.mparams.discriminator_ones_zeroes_shape))
 
-        real_input = self.input_mapper.get_discriminator_input_real(data)
-        d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_input, real)
+        with tf.GradientTape() as tape:
+            real_input = self.input_mapper.get_discriminator_input_real(data)
+            real_output = self.discriminator(real_input, training=True)
+            d_loss_real = tf.keras.losses.BinaryCrossentropy()(real, real_output)
 
-        fake_input = self.input_mapper.get_discriminator_input_fake(data, gen_imgs)
-        d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(fake_input, fake)
+            fake_input = self.input_mapper.get_discriminator_input_fake(data, gen_imgs)
+            fake_output = self.discriminator(fake_input, training=True)
+            d_loss_fake = tf.keras.losses.BinaryCrossentropy()(fake, fake_output)
 
         d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+
+        # Get the gradients
+        grads = tape.gradient(d_loss, self.discriminator.trainable_weights)
+
+        # Apply the gradients
+        self.discriminator_optimizer.apply_gradients(zip(grads, self.discriminator.trainable_weights))
+
+        d_real_acc = tf.reduce_mean(tf.cast(tf.equal(real, tf.round(real_output)), tf.float32))
+        d_fake_acc = tf.reduce_mean(tf.cast(tf.equal(fake, tf.round(fake_output)), tf.float32))
         d_acc = 0.5 * np.add(d_real_acc, d_fake_acc)
+
         losses = {
             "d_loss_fake": d_loss_fake,
             "d_loss_real": d_loss_real,
@@ -421,20 +428,92 @@ class TrainBCE(Train):
             "d_fake_acc": d_fake_acc,
             "d_real_acc": d_real_acc,
         }
+
         return d_loss, losses
 
     def generator_loss(self, disc_generated_output, gen_output, target):
         gan_loss = tf.keras.losses.BinaryCrossentropy()(tf.ones_like(disc_generated_output), disc_generated_output)
-        l1_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
-        l2_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.square(target - gen_output))
+        l1_loss = 0
+        l2_loss = 0
 
         losses = {"g_bce_loss": gan_loss}
         if self.mparams.l1_loss_factor > 0:
+            l1_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
             losses["g_l1_loss"] = l1_loss
         if self.mparams.l2_loss_factor > 0:
+            l2_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.square(target - gen_output))
             losses["g_l2_loss"] = l2_loss
 
         total_gen_loss = gan_loss + l1_loss + l2_loss
+        return total_gen_loss, losses
+
+    @tf.function
+    def train_generator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+        """
+        Need a custom train loop for the generator because I want to factor in generators predictions
+        """
+        with tf.GradientTape() as tape:
+            generator_input = self.input_mapper.get_generator_input(data, z)
+            generated_images = self.generator(generator_input, training=True)
+
+            # Get the discriminator's predictions on the fake images
+            fake_input = self.input_mapper.get_discriminator_input_fake(data, generated_images)
+            fake_preds = self.discriminator(fake_input, training=True)
+
+            # Calculate the loss using the generator's output (generated_images)
+            # and the discriminator's predictions (fake_preds)
+            real_images = self.input_mapper.get_real_images(data)
+            loss, other = self.generator_loss(fake_preds, generated_images, real_images)
+
+        # Calculate the gradients of the loss with respect to the generator's weights
+        grads = tape.gradient(loss, self.generator.trainable_weights)
+
+        # Update the weights of the generator
+        self.generator_optimizer.apply_gradients(zip(grads, self.generator.trainable_weights))
+        return loss, other
+
+
+class TrainHinge(Train):
+    @tf.function
+    def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+        with tf.GradientTape() as disc_tape:
+            real_input = self.input_mapper.get_discriminator_input_real(data)
+            real_output = self.discriminator(real_input, training=True)
+
+            fake_input = self.input_mapper.get_discriminator_input_fake(data, gen_imgs)
+            fake_output = self.discriminator(fake_input, training=True)
+
+            d_real_loss = tf.reduce_mean(tf.nn.relu(1.0 - real_output))
+            d_fake_loss = tf.reduce_mean(tf.nn.relu(1.0 + fake_output))
+            d_loss = d_real_loss + d_fake_loss
+
+        # Calculate the gradients
+        gradients_of_discriminator = disc_tape.gradient(d_loss, self.discriminator.trainable_variables)
+
+        # Apply the gradients
+        self.discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, self.discriminator.trainable_variables))
+
+        losses = {
+            "d_loss_fake": d_fake_loss,
+            "d_loss_real": d_real_loss,
+        }
+
+        return d_loss, losses
+
+    def generator_loss(self, disc_generated_output, gen_output, target):
+        gen_loss = -tf.reduce_mean(disc_generated_output)  # We're just changing this to hinge loss, bro
+        l1_loss = 0
+        l2_loss = 0
+
+        losses = {"g_loss": gen_loss}
+        if self.mparams.l1_loss_factor > 0:
+            l1_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
+            losses["g_l1_loss"] = l1_loss
+        if self.mparams.l2_loss_factor > 0:
+            l2_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.square(target - gen_output))
+            losses["g_l2_loss"] = l2_loss
+
+        total_gen_loss = gen_loss + l1_loss + l2_loss
         return total_gen_loss, losses
 
     @tf.function
@@ -467,18 +546,29 @@ class TrainBCEPatch(Train):
     """
     BCE based on patch output logits from the discriminator, not a single sigmoid output.
     """
+
+    @tf.function
     def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         real = np.ones(self.mparams.discriminator_ones_zeroes_shape)
         fake = np.zeros((self.mparams.discriminator_ones_zeroes_shape))
 
-        real_input = self.input_mapper.get_discriminator_input_real(data)
-        d_loss_real, d_real_acc = self.discriminator.train_on_batch(real_input, real)
+        with tf.GradientTape() as disc_tape:
+            real_input = self.input_mapper.get_discriminator_input_real(data)
+            real_output = self.discriminator(real_input, training=True)
+            d_loss_real = tf.reduce_mean(tf.keras.losses.binary_crossentropy(real, real_output, from_logits=True))
 
-        fake_input = self.input_mapper.get_discriminator_input_fake(data, gen_imgs)
-        d_loss_fake, d_fake_acc = self.discriminator.train_on_batch(fake_input, fake)
+            fake_input = self.input_mapper.get_discriminator_input_fake(data, gen_imgs)
+            fake_output = self.discriminator(fake_input, training=True)
+            d_loss_fake = tf.reduce_mean(tf.keras.losses.binary_crossentropy(fake, fake_output, from_logits=True))
 
-        d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
-        d_acc = 0.5 * np.add(d_real_acc, d_fake_acc)
+            d_loss = 0.5 * (d_loss_real + d_loss_fake)
+
+        gradients_of_discriminator = disc_tape.gradient(d_loss, self.discriminator.trainable_variables)
+        self.discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, self.discriminator.trainable_variables))
+
+        d_real_acc = tf.reduce_mean(tf.cast(tf.math.greater_equal(real_output, 0.0), tf.float32))
+        d_fake_acc = tf.reduce_mean(tf.cast(tf.math.less(fake_output, 0.0), tf.float32))
+        d_acc = 0.5 * (d_real_acc + d_fake_acc)
 
         losses = {
             "d_loss_fake": d_loss_fake,
@@ -491,15 +581,19 @@ class TrainBCEPatch(Train):
 
     def generator_loss(self, disc_generated_output, gen_output, target):
         gan_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(tf.ones_like(disc_generated_output), disc_generated_output)
-        l1_loss = self.mparams.l1_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
-        l2_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.square(target - gen_output))
-        total_gen_loss = gan_loss + l1_loss + l2_loss
+
+        l1_loss = 0
+        l2_loss = 0
 
         losses = {"g_bce_loss": gan_loss}
         if self.mparams.l1_loss_factor > 0:
+            l1_loss = self.mparams.l1_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
             losses["g_l1_loss"] = l1_loss
         if self.mparams.l2_loss_factor > 0:
+            l2_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.square(target - gen_output))
             losses["g_l2_loss"] = l2_loss
+
+        total_gen_loss = gan_loss + l1_loss + l2_loss
         return total_gen_loss, losses
 
     @tf.function

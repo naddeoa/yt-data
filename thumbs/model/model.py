@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from typing import Optional
 import tensorflow as tf
 
+
 @dataclass
 class BuiltModel:
-    gan: tf.keras.Model
     discriminator: tf.keras.Model
     discriminator_optimizer: tf.keras.Model
     generator: tf.keras.Model
@@ -17,12 +17,9 @@ class BuiltModel:
 
 
 class GanModel(ABC):
-    def __init__(self, params: HyperParams, mparams: MutableHyperParams, loss="binary_crossentropy") -> None:
+    def __init__(self, params: HyperParams, mparams: MutableHyperParams) -> None:
         self.params = params
         self.mparams = mparams
-        self.loss = loss
-        self.d_clipnorm: Optional[float] = mparams.d_clipnorm
-        self.g_clipnorm: Optional[float] = mparams.g_clipnorm
 
     @abstractmethod
     def build_discriminator(self, img_shape):
@@ -32,33 +29,23 @@ class GanModel(ABC):
     def build_generator(self, z_dim):
         raise NotImplementedError()
 
-    @abstractmethod
-    def build_gan(self, generator, discriminator) -> Optional[tf.keras.Model]:
-        raise NotImplementedError()
-
     def build(self) -> BuiltModel:
         discriminator = self.build_discriminator(self.params.img_shape)
-        discriminator_optimizer = AdamW(learning_rate=self.mparams.dis_learning_rate, beta_1=self.mparams.adam_b1, clipnorm=self.d_clipnorm)
-        discriminator.compile(
-            loss=self.loss,
-            optimizer=discriminator_optimizer,
-            metrics=["accuracy"],
+        discriminator_optimizer = AdamW(
+            learning_rate=self.mparams.dis_learning_rate, beta_1=self.mparams.adam_b1, global_clipnorm=self.mparams.d_clipnorm
         )
 
         generator = self.build_generator(self.params.latent_dim)
+        generator_optimizer = AdamW(
+            learning_rate=self.mparams.gen_learning_rate, beta_1=self.mparams.adam_b1, global_clipnorm=self.mparams.g_clipnorm
+        )
 
-        # TODO figure out a way of managing this flag. For the wgan that doesn't use compile it ends up
-        # tanking the discriminator in the custom training loop. Maybe its enough to set it back to True
-        # after compiling the gan
-        discriminator.trainable = False
-        gan = self.build_gan(generator, discriminator)
-        generator_optimizer = AdamW(learning_rate=self.mparams.gen_learning_rate, beta_1=self.mparams.adam_b1, clipnorm=self.g_clipnorm)
-        if gan is not None:
-            gan.compile(loss=self.loss, optimizer=generator_optimizer)
-        discriminator.trainable = True
+        discriminator.summary(line_length=200)
+        tf.keras.utils.plot_model(discriminator, to_file=self.params.dis_diagram_path, show_shapes=True, dpi=64)
+        generator.summary(line_length=200)
+        tf.keras.utils.plot_model(generator, to_file=self.params.gen_diagram_path, show_shapes=True, dpi=64)
 
         return BuiltModel(
-            gan=gan,
             discriminator=discriminator,
             discriminator_optimizer=discriminator_optimizer,
             generator=generator,

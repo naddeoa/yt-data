@@ -42,7 +42,7 @@ class PokemonModel(GanModel):
     def build_generator(self, z_dim):
         model = Sequential(name="generator")
 
-        model.add(Dense(1024* 8 * 8, input_dim=z_dim))
+        model.add(Dense(1024 * 8 * 8, input_dim=z_dim))
         model.add(Reshape((8, 8, 1024)))
 
         model.add(Conv2DTranspose(512, kernel_size=5, strides=2, padding="same"))
@@ -148,7 +148,9 @@ class PokemonExperiment(Experiment):
 
         return schedule
 
-    def custom_agumentation(self, image: tf.Tensor, labels: Optional[tf.Tensor] = None) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
+    def custom_agumentation(
+        self, image: tf.Tensor, labels: Optional[tf.Tensor] = None
+    ) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
         """
         No zoom for this dataset since the pokemon are much closer to the edge of the frame
         """
@@ -161,24 +163,10 @@ class PokemonExperiment(Experiment):
         return image
 
     def get_params(self) -> HyperParams:
-        name = "pokemon_wgan_5stride_good_dataset_repro"
-
-        exp_dir = 'EXP_DIR'
-        if exp_dir in os.environ:
-            base_dir = os.environ['EXP_DIR']
-        else:
-            base_dir = '/mnt/e/experiments'
-
         return HyperParams(
             latent_dim=100,
             img_shape=(128, 128, 3),
-            weight_path=f"{base_dir}/{name}/weights",
-            checkpoint_path=f"{base_dir}/{name}/checkpoints",
-            prediction_path=f"{base_dir}/{name}/predictions",
-            iteration_checkpoints_path=f"{base_dir}/{name}/iteration_checkpoints",
-            loss_path=f"{base_dir}/{name}/loss",
-            accuracy_path=f"{base_dir}/{name}/accuracy",
-            iteration_path=f"{base_dir}/{name}/iteration",
+            name="pokemon_wgan_5stride_good_dataset_repro",
             similarity_threshold=0.0,
             similarity_penalty=20,
         )
@@ -189,4 +177,3 @@ class PokemonExperiment(Experiment):
 
 if __name__ == "__main__":
     PokemonExperiment().start()
-
