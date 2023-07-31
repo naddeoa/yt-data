@@ -3,7 +3,7 @@ import json
 import numpy as np
 from thumbs.model.model import BuiltModel
 from thumbs.util import is_colab
-from thumbs.viz import show_loss_plot, show_samples
+from thumbs.viz import show_loss_plot, show_samples, visualize_thumbnails
 from thumbs.params import HyperParams, MutableHyperParams
 from thumbs.loss import Loss
 from typing import List, Optional, Tuple, Any, Optional, Callable, Dict, Union
@@ -200,7 +200,7 @@ class Train(ABC):
                 for d_turn in range(self.mparams.discriminator_turns):
                     cur_item: tuple = item
 
-                    z = np.random.normal(0, 1, (self.mparams.batch_size, self.params.latent_dim))
+                    z = self.params.latent_sample(self.mparams.batch_size)
                     generator_input = self.input_mapper.get_generator_input(cur_item, z)
                     gen_imgs = self.generator.predict(generator_input, verbose=0)
 
@@ -215,7 +215,7 @@ class Train(ABC):
                 # ---------------------
                 for g_turn in range(self.mparams.generator_turns):
                     cur_item = item
-                    z = np.random.normal(0, 1, (self.mparams.batch_size, self.params.latent_dim))
+                    z = self.params.latent_sample(self.mparams.batch_size)
 
                     if g_turn > 0:
                         # Get a new random shuffle from the dataset for multiple turns
@@ -271,13 +271,7 @@ class Train(ABC):
             save_as_json(self.iteration_checkpoints, self.params.iteration_checkpoints_path)
 
             file_name = str(iteration)
-            show_samples(
-                self.generator,
-                self.params.latent_dim,
-                file_name=file_name,
-                dir=self.params.prediction_path,
-                label_getter=self.label_getter,
-            )
+            self.show_samples(file_name=file_name)
             show_loss_plot(
                 self.losses,
                 self.iteration_checkpoints,
@@ -293,6 +287,17 @@ class Train(ABC):
             return True
         else:
             return False
+
+    def show_samples(self, file_name, rows=6, cols=6):
+        noise = self.params.latent_sample(rows * cols)
+        if self.label_getter is not None:
+            labels = self.label_getter(rows * cols)
+            generated_thumbnails = self.generator.predict((noise, *labels), verbose=0)
+        else:
+            generated_thumbnails = self.generator.predict(noise, verbose=0)
+
+        dir = self.params.prediction_path
+        visualize_thumbnails(generated_thumbnails, rows, cols, dir, file_name)
 
 
 class TrainWassersteinGP(Train):

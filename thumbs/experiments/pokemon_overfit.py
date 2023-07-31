@@ -13,7 +13,7 @@ from thumbs.diff_augmentation import DiffAugmentLayer
 from thumbs.experiment import Experiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_data256, normalize_image, unnormalize_image
-from thumbs.params import HyperParams, MutableHyperParams
+from thumbs.params import HyperParams, MutableHyperParams, Sampler
 from thumbs.model.model import GanModel, BuiltModel
 
 from tensorflow_addons.layers import InstanceNormalization, SpectralNormalization
@@ -48,12 +48,12 @@ from keras.layers.convolutional import Conv2D, Conv2DTranspose
 
 from thumbs.train import Train, TrainBCE, TrainWassersteinGP, TrainBCEPatch, TrainHinge
 
-ngf = 48
+ngf = 32
 gen_highest_f = 16
 ngl = 0
 ngb = 4
 
-ndf = 48 
+ndf = 32
 disc_highest_f = 16
 ndl = 0
 ndb = 4
@@ -115,12 +115,12 @@ class PokemonExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 4000] = MutableHyperParams(
+        schedule[0, 10000] = MutableHyperParams(
             gen_learning_rate=0.0001,
             dis_learning_rate=0.0002,
             batch_size=8,
             adam_b1=0.5,
-            iterations=4000,
+            iterations=10000,
             sample_interval=50,
             discriminator_turns=2,
             generator_turns=1,
@@ -128,7 +128,7 @@ class PokemonExperiment(Experiment):
             gradient_penalty_factor=10,
         )
 
-        schedule[4001, 1000000] = MutableHyperParams(
+        schedule[10001, 1_000_000] = MutableHyperParams(
             gen_learning_rate=0.00001,
             dis_learning_rate=0.00002,
             batch_size=8,
@@ -145,11 +145,12 @@ class PokemonExperiment(Experiment):
 
     def get_params(self) -> HyperParams:
         return HyperParams(
-            latent_dim=4,
-            name="pkmn_overfit_48f-16x_4dim_diff_8batch_3kern",
+            latent_dim=100, #gen_highest_f * ngf,
+            name="pkmn_overfit_48f-16x_100dim-bernoulli_diff_8batch",
             img_shape=(128, 128, 3),
             similarity_threshold=0.0,
             similarity_penalty=0,
+            sampler=Sampler.BERNOULLI
         )
 
     def get_model(self, mparams: MutableHyperParams) -> GanModel:

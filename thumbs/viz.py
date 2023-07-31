@@ -179,6 +179,7 @@ def visualize_thumbnails(image_list, rows, cols, dir=None, file_name=None):
     plt.close()
 
 
+# deprecated
 def show_samples(generator, latent_dim, file_name, dir: str, rows=6, cols=6, label_getter=None):
     # noise = np.random.uniform(-1, 1, size=(rows * cols, latent_dim))
     noise = np.random.normal(0, 1, (rows * cols, latent_dim))

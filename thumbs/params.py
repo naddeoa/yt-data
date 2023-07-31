@@ -1,6 +1,16 @@
 from dataclasses import dataclass
 import os
+import numpy as np
 from typing import Tuple, Optional
+from enum import Enum
+
+
+# Create an enum
+class Sampler(Enum):
+    UNIFORM = 0
+    NORMAL = 1
+    UNIFORM_NORMAL = 2
+    BERNOULLI = 3
 
 
 @dataclass
@@ -13,6 +23,21 @@ class HyperParams:
     similarity_penalty: float  # = 10.0
     generator_clip_gradients_norm: Optional[float] = None  # = None
     base_dir: str = os.environ["EXP_DIR"] if "EXP_DIR" in os.environ else "/mnt/e/experiments"
+    sampler: Sampler = Sampler.NORMAL
+
+    def latent_sample(self, batch_size: int) -> np.ndarray:
+        if self.sampler == Sampler.UNIFORM:
+            return np.random.uniform(-1, 1, (batch_size, self.latent_dim))
+        elif self.sampler == Sampler.NORMAL:
+            return np.random.normal(0, 1, (batch_size, self.latent_dim))
+        elif self.sampler == Sampler.UNIFORM_NORMAL:
+            latent = np.random.uniform(-1, 1, (batch_size, self.latent_dim))
+            latent += np.random.normal(0, 0.1, (batch_size, self.latent_dim))
+            return latent
+        elif self.sampler == Sampler.BERNOULLI:
+            return np.random.binomial(1, 0.5, (batch_size, self.latent_dim))
+        else:
+            raise ValueError("Invalid sampler")
 
     @property
     def gen_weight_path(self):
