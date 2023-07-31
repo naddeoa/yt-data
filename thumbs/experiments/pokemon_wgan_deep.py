@@ -140,7 +140,7 @@ class PokemonExperiment(Experiment):
         self.augment_rotations = False
         # The paper says that flips seemed to be ok
         self.augment_flips = True
-        self.data = get_pokemon_data256(self.params.img_shape)
+        self.data = get_pokemon_data256(self.params.img_shape)[:4]
 
     def get_data(self) -> np.ndarray:
         return self.data
@@ -153,38 +153,38 @@ class PokemonExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 110] = MutableHyperParams(
+        schedule[0, 11000] = MutableHyperParams(
             gen_learning_rate=0.0001,
             dis_learning_rate=0.0002,
-            batch_size=16,
+            batch_size=4,
             adam_b1=0.5,
-            iterations=110,
+            iterations=11000,
             sample_interval=5,
-            discriminator_turns=2,
+            discriminator_turns=1,
             generator_turns=1,
             checkpoint_interval=200,
             gradient_penalty_factor=10,
         )
 
-        schedule[111, 100000] = MutableHyperParams(
-            gen_learning_rate=0.00001,
-            dis_learning_rate=0.00002,
-            batch_size=16,
-            adam_b1=0.5,
-            iterations=100000,
-            sample_interval=5,
-            discriminator_turns=2,
-            generator_turns=1,
-            checkpoint_interval=200,
-            gradient_penalty_factor=10,
-        )
+        # schedule[111, 100000] = MutableHyperParams(
+        #     gen_learning_rate=0.00001,
+        #     dis_learning_rate=0.00002,
+        #     batch_size=16,
+        #     adam_b1=0.5,
+        #     iterations=100000,
+        #     sample_interval=5,
+        #     discriminator_turns=2,
+        #     generator_turns=1,
+        #     checkpoint_interval=200,
+        #     gradient_penalty_factor=10,
+        # )
 
         return schedule
 
     def get_params(self) -> HyperParams:
         return HyperParams(
             latent_dim=100,
-            name="pokemon_wgan_deep_16",
+            name="pokemon_wgan_deep_memo",
             img_shape=(128, 128, 3),
             similarity_threshold=0.0,
             similarity_penalty=0,

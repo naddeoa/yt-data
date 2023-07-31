@@ -49,14 +49,14 @@ from keras.layers.convolutional import Conv2D, Conv2DTranspose
 from thumbs.train import Train, TrainBCE, TrainWassersteinGP, TrainBCEPatch, TrainHinge
 
 
-ngf = 64
-gen_highest_f = 8
-ngl = 1
+ngf = 32
+gen_highest_f = 16
+ngl = 0
 ngb = 4
 
-ndf = 64
-disc_highest_f = 8
-ndl = 1
+ndf = 32
+disc_highest_f = 16
+ndl = 0
 ndb = 4
 
 
@@ -90,7 +90,7 @@ class PokemonModel(GanModel):
                 x = Conv(f, kernel_size=4, strides=1, padding="same", use_bias=False, name=f"tconv_{f}_{i}")(x)
 
             x = InstanceNormalization(name=f"norm_{f}_{i}")(x)
-            x = ReLU(name=f"relu_{f}_{i}")(x)
+            x = LeakyReLU(alpha=0.2, name=f"relu_{f}_{i}")(x)
 
             if spectral_norm:
                 x = SpectralNormalization(Conv(f, kernel_size=4, strides=1, padding="same", use_bias=False, name=f"tconv_{f}_{i}_2"))(x)
@@ -99,7 +99,7 @@ class PokemonModel(GanModel):
 
             x = InstanceNormalization(name=f"norm_{f}_{i}_2")(x)
             x = Add(name=f"combine_{f}_{i}")([orig_input, x])  # TODO I can combine these in other ways to experiment
-            x = ReLU(name=f"relu_{f}_{i}_2")(x)
+            x = LeakyReLU(alpha=0.2, name=f"relu_{f}_{i}_2")(x)
 
         if downsample_f is not None:
             if spectral_norm:
@@ -111,7 +111,7 @@ class PokemonModel(GanModel):
 
             if downsample_norm_relu:
                 x = InstanceNormalization(name=f"norm_{f}")(x)
-                x = ReLU(name=f"relu_{f}")(x)
+                x = LeakyReLU(alpha=0.2, name=f"relu_{f}")(x)
 
         return x
 
@@ -119,7 +119,6 @@ class PokemonModel(GanModel):
         z = Input(shape=(z_dim,), name="z")
 
         x = Dense((ngf * gen_highest_f) * 8 * 8)(z)
-        x = LeakyReLU()(x)
         x = Reshape((8, 8, ngf * gen_highest_f))(x)
 
         ls = np.linspace(gen_highest_f, 1, ngb)
@@ -137,6 +136,7 @@ class PokemonModel(GanModel):
     def build_discriminator(self, img_shape):
         img_input = Input(shape=img_shape, name="img_input")
         x = DiffAugmentLayer()(img_input)
+        # x = img_input
 
         ls = [0, *np.linspace(1, disc_highest_f, ndb)]
         for features, next_f in zip_longest(ls, ls[1:]):
@@ -161,8 +161,8 @@ class PokemonExperiment(Experiment):
         self.augment_zooms = False
         self.augment_rotations = False
         # The paper says that flips seemed to be ok
-        self.augment_flips = True
-        self.data = get_pokemon_data256(self.params.img_shape)[:4]
+        self.augment_flips = False
+        self.data = get_pokemon_data256(self.params.img_shape)[:8]
 
     def get_data(self) -> np.ndarray:
         return self.data
@@ -175,38 +175,38 @@ class PokemonExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 10000] = MutableHyperParams(
+        schedule[0, 6000] = MutableHyperParams(
             gen_learning_rate=0.0001,
             dis_learning_rate=0.0002,
-            batch_size=1,
+            batch_size=8,
             adam_b1=0.5,
-            iterations=10000,
-            sample_interval=5,
-            discriminator_turns=1,
+            iterations=6000,
+            sample_interval=50,
+            discriminator_turns=2,
             generator_turns=1,
-            checkpoint_interval=200,
+            checkpoint_interval=1000,
             gradient_penalty_factor=10,
         )
 
-        # schedule[101, 100000] = MutableHyperParams(
-        #     gen_learning_rate=0.00001,
-        #     dis_learning_rate=0.00002,
-        #     batch_size=32,
-        #     adam_b1=0.5,
-        #     iterations=100000,
-        #     sample_interval=5,
-        #     discriminator_turns=2,
-        #     generator_turns=1,
-        #     checkpoint_interval=200,
-        #     gradient_penalty_factor=10,
-        # )
+        schedule[6001, 1000000] = MutableHyperParams(
+            gen_learning_rate=0.00001,
+            dis_learning_rate=0.00002,
+            batch_size=8,
+            adam_b1=0.5,
+            iterations=1000000,
+            sample_interval=50,
+            discriminator_turns=2,
+            generator_turns=1,
+            checkpoint_interval=1000,
+            gradient_penalty_factor=10,
+        )
 
         return schedule
 
     def get_params(self) -> HyperParams:
         return HyperParams(
-            latent_dim=100,
-            name="pokemon_wgan_resnet",
+            latent_dim=4,
+            name="pokemon_wgan_resnet_32f-16x_4dim_diff_8batch_0res",
             img_shape=(128, 128, 3),
             similarity_threshold=0.0,
             similarity_penalty=0,

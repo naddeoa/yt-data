@@ -32,11 +32,13 @@ class GanModel(ABC):
     def build(self) -> BuiltModel:
         discriminator = self.build_discriminator(self.params.img_shape)
         discriminator_optimizer = AdamW(
+            weight_decay=self.mparams.dis_weight_decay,
             learning_rate=self.mparams.dis_learning_rate, beta_1=self.mparams.adam_b1, global_clipnorm=self.mparams.d_clipnorm
         )
 
         generator = self.build_generator(self.params.latent_dim)
         generator_optimizer = AdamW(
+            weight_decay=self.mparams.gen_weight_decay,
             learning_rate=self.mparams.gen_learning_rate, beta_1=self.mparams.adam_b1, global_clipnorm=self.mparams.g_clipnorm
         )
 

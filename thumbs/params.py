@@ -77,6 +77,8 @@ class MutableHyperParams:
     discriminator_ones_zeroes_shape: tuple = ()
     g_clipnorm: Optional[float] = None
     d_clipnorm: Optional[float] = None
+    dis_weight_decay: float = 0.004
+    gen_weight_decay: float = 0.004
 
     def __post_init__(self):
         if self.discriminator_ones_zeroes_shape == ():
