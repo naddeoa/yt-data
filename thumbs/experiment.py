@@ -1,4 +1,5 @@
 import tensorflow as tf
+import textwrap
 from thumbs.viz import show_samples
 from thumbs.params import HyperParams, MutableHyperParams
 import os
@@ -101,8 +102,25 @@ class Experiment(ABC):
             .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
         )
 
+    def write_params(self) -> None:
+        params = f"""
+params:
+{textwrap.indent(self.params.get_yaml(), '    ')}
+"""
+
+        schedule = self.get_mutable_params()
+        for rnge, mparams in schedule.items():
+            params += f"""
+{rnge}:
+{textwrap.indent(mparams.get_yaml(), '    ')}
+"""
+
+        with open(self.params.params_path, "w") as f:
+            f.write(params)
+
     def start(self) -> None:
         print("Num GPUs Available: ", len(tf.config.list_physical_devices("GPU")))
+        self.write_params()
         schedule = self.get_mutable_params()
         loaded_i = load_iterations(self.params.iteration_path)
         if loaded_i is not None:

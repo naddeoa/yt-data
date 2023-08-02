@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import yaml
 import os
 import numpy as np
 from typing import Tuple, Optional
@@ -11,6 +12,7 @@ class Sampler(Enum):
     NORMAL = 1
     UNIFORM_NORMAL = 2
     BERNOULLI = 3
+    CENSORED_NORMAL = 4
 
 
 @dataclass
@@ -19,11 +21,12 @@ class HyperParams:
     name: str  # = "pokemon_deep_1L_clipped-0.5_gp-0"
 
     img_shape: Tuple[int, int, int]  # = (128, 128, 3)
-    similarity_threshold: float  # = 0.0
-    similarity_penalty: float  # = 10.0
     generator_clip_gradients_norm: Optional[float] = None  # = None
     base_dir: str = os.environ["EXP_DIR"] if "EXP_DIR" in os.environ else "/mnt/e/experiments"
     sampler: Sampler = Sampler.NORMAL
+
+    similarity_threshold: float = 0  # = 0.0
+    similarity_penalty: float = 10  # = 10.0
 
     def latent_sample(self, batch_size: int) -> np.ndarray:
         if self.sampler == Sampler.UNIFORM:
@@ -36,6 +39,12 @@ class HyperParams:
             return latent
         elif self.sampler == Sampler.BERNOULLI:
             return np.random.binomial(1, 0.5, (batch_size, self.latent_dim))
+        elif self.sampler == Sampler.CENSORED_NORMAL:
+            mean = 1
+            latent = np.random.normal(0, mean, (batch_size, self.latent_dim))
+            latent[latent > mean] = mean
+            latent[latent < -mean] = -mean
+            return latent
         else:
             raise ValueError("Invalid sampler")
 
@@ -64,6 +73,10 @@ class HyperParams:
         return f"{self.base_dir}/{self.name}/loss"
 
     @property
+    def params_path(self):
+        return f"{self.base_dir}/{self.name}/params.yaml"
+
+    @property
     def accuracy_path(self):
         return f"{self.base_dir}/{self.name}/accuracy"
 
@@ -81,6 +94,9 @@ class HyperParams:
 
     def __post_init__(self):
         os.makedirs(f"{self.base_dir}/{self.name}", exist_ok=True)
+
+    def get_yaml(self) -> str:
+        return str(yaml.dump(self.__dict__, indent=4))
 
 
 @dataclass
@@ -108,3 +124,6 @@ class MutableHyperParams:
     def __post_init__(self):
         if self.discriminator_ones_zeroes_shape == ():
             self.discriminator_ones_zeroes_shape = (self.batch_size, 1)
+
+    def get_yaml(self) -> str:
+        return str(yaml.dump(self.__dict__, indent=4))

@@ -48,12 +48,12 @@ from keras.layers.convolutional import Conv2D, Conv2DTranspose
 
 from thumbs.train import Train, TrainBCE, TrainWassersteinGP, TrainBCEPatch, TrainHinge
 
-ngf = 32
+ngf = 48
 gen_highest_f = 16
 ngl = 0
 ngb = 4
 
-ndf = 32
+ndf = 48
 disc_highest_f = 16
 ndl = 0
 ndb = 4
@@ -102,7 +102,7 @@ class PokemonExperiment(Experiment):
         self.augment_rotations = False
         # The paper says that flips seemed to be ok
         self.augment_flips = False
-        self.data = get_pokemon_data256(self.params.img_shape)[:8]
+        self.data = get_pokemon_data256(self.params.img_shape)[:16]
 
     def get_data(self) -> np.ndarray:
         return self.data
@@ -115,27 +115,27 @@ class PokemonExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 10000] = MutableHyperParams(
+        schedule[0, 15300] = MutableHyperParams(
             gen_learning_rate=0.0001,
             dis_learning_rate=0.0002,
-            batch_size=8,
+            batch_size=16,
             adam_b1=0.5,
-            iterations=10000,
-            sample_interval=50,
-            discriminator_turns=2,
+            iterations=15300,
+            sample_interval=100,
+            discriminator_turns=1,
             generator_turns=1,
             checkpoint_interval=1000,
             gradient_penalty_factor=10,
         )
 
-        schedule[10001, 1_000_000] = MutableHyperParams(
+        schedule[15301, 100000] = MutableHyperParams(
             gen_learning_rate=0.00001,
             dis_learning_rate=0.00002,
-            batch_size=8,
+            batch_size=16,
             adam_b1=0.5,
-            iterations=1000000,
-            sample_interval=50,
-            discriminator_turns=2,
+            iterations=100000,
+            sample_interval=100,
+            discriminator_turns=1,
             generator_turns=1,
             checkpoint_interval=1000,
             gradient_penalty_factor=10,
@@ -145,12 +145,10 @@ class PokemonExperiment(Experiment):
 
     def get_params(self) -> HyperParams:
         return HyperParams(
-            latent_dim=100, #gen_highest_f * ngf,
-            name="pkmn_overfit_48f-16x_100dim-bernoulli_diff_8batch",
+            latent_dim=20, #gen_highest_f * ngf,
+            name="pkmn_overfit_48f-16x_20dim-normal_16batch-16total",
             img_shape=(128, 128, 3),
-            similarity_threshold=0.0,
-            similarity_penalty=0,
-            sampler=Sampler.BERNOULLI
+            sampler=Sampler.NORMAL
         )
 
     def get_model(self, mparams: MutableHyperParams) -> GanModel:
