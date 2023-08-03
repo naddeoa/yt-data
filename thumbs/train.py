@@ -162,7 +162,7 @@ class Train(ABC):
 
     # TODO make these return a (tensor, dict) where the dict has all of the components of the loss
     @abstractmethod
-    def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def train_discriminator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         raise NotImplementedError()
 
     @abstractmethod
@@ -200,15 +200,12 @@ class Train(ABC):
                 for d_turn in range(self.mparams.discriminator_turns):
                     cur_item: tuple = item
 
-                    z = self.params.latent_sample(self.mparams.batch_size)
-                    generator_input = self.input_mapper.get_generator_input(cur_item, z)
-                    gen_imgs = self.generator.predict(generator_input, verbose=0)
-
                     if d_turn > 0:
                         # Get a new random shuffle from the dataset for multiple turns
                         cur_item = dataset.__iter__().__next__()
 
-                    d_loss, d_other = self.train_discriminator(gen_imgs, cur_item)
+                    z = self.params.latent_sample(self.mparams.batch_size)
+                    d_loss, d_other = self.train_discriminator(z, cur_item)
 
                 # ---------------------
                 #  Train the Generator
@@ -307,10 +304,7 @@ class TrainWassersteinGP(Train):
         This loss is calculated on an interpolated image
         and added to the discriminator loss.
         """
-        # Get the interpolated image
         alpha = tf.random.normal([self.mparams.batch_size, 1, 1, 1], 0.0, 1.0)
-        # alpha = tf.random.uniform(shape=[self.mparams.batch_size, 1, 1, 1], minval=0.0, maxval=1.0)
-
         real_images = self.input_mapper.get_real_images(data)
         diff = fake_images - real_images
         interpolated = real_images + alpha * diff
@@ -334,15 +328,14 @@ class TrainWassersteinGP(Train):
         return fake_loss - real_loss, {"d_loss_real": real_loss, "d_loss_fake": fake_loss}
 
     @tf.function
-    def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
-        # def train_discriminator(self, gen_imgs, real_imgs, labels) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
-        # Get the latent vector
+    def train_discriminator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+        generator_input = self.input_mapper.get_generator_input(data, z)
+        real_input = self.input_mapper.get_discriminator_input_real(data)
         with tf.GradientTape() as tape:
-            # Get the logits for the fake images
-            real_input = self.input_mapper.get_discriminator_input_real(data)
-            real_logits = self.discriminator(real_input, training=True)
-
+            gen_imgs = self.generator(generator_input, training=True)
             fake_input = self.input_mapper.get_discriminator_input_fake(data, gen_imgs)
+            # Get the logits for the fake images
+            real_logits = self.discriminator(real_input, training=True)
             fake_logits = self.discriminator(fake_input, training=True)
 
             # Calculate the discriminator loss using the fake and real image logits
@@ -401,11 +394,13 @@ class TrainBCE(Train):
     BCE with an additional loss based on cosine similarity
     """
 
-    def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def train_discriminator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+        generator_input = self.input_mapper.get_generator_input(data, z)
         real = np.ones(self.mparams.discriminator_ones_zeroes_shape)
         fake = np.zeros((self.mparams.discriminator_ones_zeroes_shape))
 
         with tf.GradientTape() as tape:
+            gen_imgs = self.generator(generator_input, training=True)
             real_input = self.input_mapper.get_discriminator_input_real(data)
             real_output = self.discriminator(real_input, training=True)
             d_loss_real = tf.keras.losses.BinaryCrossentropy()(real, real_output)
@@ -480,8 +475,10 @@ class TrainBCE(Train):
 
 class TrainHinge(Train):
     @tf.function
-    def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def train_discriminator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+        generator_input = self.input_mapper.get_generator_input(data, z)
         with tf.GradientTape() as disc_tape:
+            gen_imgs = self.generator(generator_input, training=True)
             real_input = self.input_mapper.get_discriminator_input_real(data)
             real_output = self.discriminator(real_input, training=True)
 
@@ -553,11 +550,13 @@ class TrainBCEPatch(Train):
     """
 
     @tf.function
-    def train_discriminator(self, gen_imgs, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def train_discriminator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+        generator_input = self.input_mapper.get_generator_input(data, z)
         real = np.ones(self.mparams.discriminator_ones_zeroes_shape)
         fake = np.zeros((self.mparams.discriminator_ones_zeroes_shape))
 
         with tf.GradientTape() as disc_tape:
+            gen_imgs = self.generator(generator_input, training=True)
             real_input = self.input_mapper.get_discriminator_input_real(data)
             real_output = self.discriminator(real_input, training=True)
             d_loss_real = tf.reduce_mean(tf.keras.losses.binary_crossentropy(real, real_output, from_logits=True))

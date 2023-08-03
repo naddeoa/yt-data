@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
 import tensorflow as tf
 from thumbs.params import HyperParams, MutableHyperParams
-from keras.optimizers import Adam
-from keras.optimizers.adamw import AdamW
+from keras.optimizers import Adam, AdamW
 from dataclasses import dataclass
 from typing import Optional
 import tensorflow as tf
@@ -33,13 +32,19 @@ class GanModel(ABC):
         discriminator = self.build_discriminator(self.params.img_shape)
         discriminator_optimizer = AdamW(
             weight_decay=self.mparams.dis_weight_decay,
-            learning_rate=self.mparams.dis_learning_rate, beta_1=self.mparams.adam_b1, global_clipnorm=self.mparams.d_clipnorm
+            learning_rate=self.mparams.dis_learning_rate,
+            beta_1=self.mparams.adam_b1,
+            beta_2=self.mparams.adam_b2,
+            global_clipnorm=self.mparams.d_clipnorm,
         )
 
         generator = self.build_generator(self.params.latent_dim)
         generator_optimizer = AdamW(
             weight_decay=self.mparams.gen_weight_decay,
-            learning_rate=self.mparams.gen_learning_rate, beta_1=self.mparams.adam_b1, global_clipnorm=self.mparams.g_clipnorm
+            learning_rate=self.mparams.gen_learning_rate,
+            beta_1=self.mparams.adam_b1,
+            beta_2=self.mparams.adam_b2,
+            global_clipnorm=self.mparams.g_clipnorm,
         )
 
         discriminator.summary(line_length=200)

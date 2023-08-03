@@ -120,6 +120,7 @@ class MutableHyperParams:
     d_clipnorm: Optional[float] = None
     dis_weight_decay: float = 0.004
     gen_weight_decay: float = 0.004
+    adam_b2: float = 0.999  # = 0.5
 
     def __post_init__(self):
         if self.discriminator_ones_zeroes_shape == ():
