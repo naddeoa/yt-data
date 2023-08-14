@@ -148,7 +148,7 @@ class PokemonExperiment(Experiment):
 
         return schedule
 
-    def custom_agumentation(
+    def custom_augmentation(
         self, image: tf.Tensor, labels: Optional[tf.Tensor] = None
     ) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
         """

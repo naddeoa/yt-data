@@ -3,7 +3,7 @@ import tensorflow as tf
 from thumbs.params import HyperParams, MutableHyperParams
 from keras.optimizers import Adam, AdamW
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Type
 import tensorflow as tf
 
 
@@ -30,7 +30,7 @@ class GanModel(ABC):
 
     def build(self) -> BuiltModel:
         discriminator = self.build_discriminator(self.params.img_shape)
-        discriminator_optimizer = AdamW(
+        discriminator_optimizer = Adam(
             weight_decay=self.mparams.dis_weight_decay,
             learning_rate=self.mparams.dis_learning_rate,
             beta_1=self.mparams.adam_b1,
@@ -39,7 +39,7 @@ class GanModel(ABC):
         )
 
         generator = self.build_generator(self.params.latent_dim)
-        generator_optimizer = AdamW(
+        generator_optimizer = Adam(
             weight_decay=self.mparams.gen_weight_decay,
             learning_rate=self.mparams.gen_learning_rate,
             beta_1=self.mparams.adam_b1,

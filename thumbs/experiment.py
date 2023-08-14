@@ -38,7 +38,7 @@ class Experiment(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_data(self) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+    def get_data(self) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]]:
         raise NotImplementedError()
 
     def augment_data(self) -> bool:
@@ -95,12 +95,12 @@ class Experiment(ABC):
         return image if labels is None else (image, labels)
 
     def prepare_data(self, dataset: tf.data.Dataset, mparams: MutableHyperParams) -> tf.data.Dataset:
-        return (
-            dataset.shuffle(buffer_size=1000)
-            .map(self.custom_agumentation)
-            .batch(mparams.batch_size, drop_remainder=True)
-            .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
-        )
+        d = dataset.shuffle(buffer_size=1000)
+
+        if self.augment_data():
+            d = d.map(self.custom_agumentation)
+
+        return d.batch(mparams.batch_size, drop_remainder=True).prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
     def write_params(self) -> None:
         params = f"""
@@ -131,6 +131,7 @@ params:
 
         while True:
             try:
+                print(f"Looking up hyper params for iteration {i+1}")
                 mparams: MutableHyperParams = schedule[i + 1]
                 print(mparams)
             except KeyError:

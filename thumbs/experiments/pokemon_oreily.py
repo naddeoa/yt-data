@@ -48,12 +48,12 @@ tf.keras.layers.Dropout  # TODO is this different than keras.layers.Dropout? Is 
 ngf = 64
 gen_highest_f = 8
 ngl = 0
-ngb = 5
+ngb = 4
 
 ndf = 64
-disc_highest_f = 8
+disc_highest_f = 8 
 ndl = 0
-ndb = 5
+ndb = 4
 
 
 class PokemonModel(GanModel):
@@ -63,15 +63,15 @@ class PokemonModel(GanModel):
 
         for f in np.linspace(gen_highest_f, 1, ngb):
             if f == gen_highest_f:
-                x = Conv2DTranspose(int(f) * ngf, kernel_size=4, strides=1, padding="valid", use_bias=False)(x)
-                x = BatchNormalization(momentum=0.9)(x)
+                x = Conv2DTranspose(int(f) * ngf, kernel_size=8, strides=1, padding="valid", use_bias=False)(x)
+                x = LayerNormalization()(x)
                 x = LeakyReLU(alpha=0.2)(x)
             else:
-                x = Conv2DTranspose(int(f) * ngf, kernel_size=4, strides=2, padding="same", use_bias=False)(x)
-                x = BatchNormalization(momentum=0.9)(x)
+                x = Conv2DTranspose(int(f) * ngf, kernel_size=3, strides=2, padding="same", use_bias=False)(x)
+                x = LayerNormalization()(x)
                 x = LeakyReLU(alpha=0.2)(x)
 
-        x = Conv2DTranspose(3, kernel_size=4, strides=2, padding="same", use_bias=False, activation="tanh")(x)
+        x = Conv2DTranspose(3, kernel_size=3, strides=2, padding="same", use_bias=False, activation="tanh")(x)
 
         model = Model(z, x, name="generator")
         return model
@@ -81,12 +81,12 @@ class PokemonModel(GanModel):
         x = DiffAugmentLayer()(img_input)
 
         for i, f in enumerate(np.linspace(1, disc_highest_f, ndb)):
-            x = SpectralNormalization(Conv2D(int(f) * ndf, kernel_size=4, strides=2, padding="same"))(x)
+            x = SpectralNormalization(Conv2D(int(f) * ndf, kernel_size=3, strides=2, padding="same"))(x)
             if i != 0:
-                x = BatchNormalizationV1(momentum=0.9)(x)
+                x = LayerNormalization()(x)
             x = LeakyReLU(alpha=0.2)(x)
 
-        x = SpectralNormalization(Conv2D(1, kernel_size=4, strides=1, padding="valid"))(x)
+        x = SpectralNormalization(Conv2D(1, kernel_size=8, strides=1, padding="valid"))(x)
         x = Flatten()(x)
 
         model = Model(img_input, x, name="discriminator")
@@ -99,7 +99,7 @@ class PokemonExperiment(Experiment):
         self.augment_zooms = False
         self.augment_rotations = False
         # The paper says that flips seemed to be ok
-        self.augment_flips = True
+        self.augment_flips = False 
         self.data = get_pokemon_data256(self.params.img_shape)
 
     def get_data(self) -> np.ndarray:
@@ -113,16 +113,39 @@ class PokemonExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 1000000] = MutableHyperParams(
-            gen_learning_rate=0.0002,
-            dis_learning_rate=0.0002,
-            batch_size=8,
+        schedule[0, 3000] = MutableHyperParams(
+            gen_learning_rate=0.0001,
+            dis_learning_rate=0.0001,
+            batch_size=len(self.data)//2,
+            adam_b1=0.5,
+            iterations=3000,
+            sample_interval=40,
+            discriminator_turns=1,
+            generator_turns=1,
+            gradient_penalty_factor=10.0,
+        )
+
+        schedule[3001, 14400] = MutableHyperParams(
+            gen_learning_rate=0.00001, # updated
+            dis_learning_rate=0.00001, # updated
+            batch_size=len(self.data)//2,
+            adam_b1=0.5,
+            iterations=14400,
+            sample_interval=40,
+            discriminator_turns=1,
+            generator_turns=1,
+            gradient_penalty_factor=10.0,
+        )
+
+        schedule[14401, 1000000] = MutableHyperParams(
+            gen_learning_rate=0.00001,
+            dis_learning_rate=0.00001,
+            batch_size=len(self.data)//2,
             adam_b1=0.5,
             iterations=1000000,
-            sample_interval=5,
-            discriminator_turns=3,
+            sample_interval=10, # updated
+            discriminator_turns=5, # updated
             generator_turns=1,
-            checkpoint_interval=50,
             gradient_penalty_factor=10.0,
         )
 
@@ -130,8 +153,8 @@ class PokemonExperiment(Experiment):
 
     def get_params(self) -> HyperParams:
         return HyperParams(
-            latent_dim=64,  # gen_highest_f * ngf,
-            name="pkmn_oreily_64f-8x_64dim-normal_8batch-all",
+            latent_dim=60,  # gen_highest_f * ngf,
+            name="pkmn_oreily_64f-8x_60dim-normal_410batch-all",
             img_shape=(128, 128, 3),
             sampler=Sampler.NORMAL,
         )

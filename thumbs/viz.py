@@ -59,8 +59,13 @@ def show_loss_plot(losses, iteration_checkpoints, dir: str, file_name: str, save
     plt.ylabel("Loss")
     plt.legend()
 
+    # Show label on the last data point
     plt.annotate(text=f"{disc_loss[-1]}", xy=(iteration_checkpoints[-1], disc_loss[-1]))
     plt.annotate(text=f"{gen_loss[-1]}", xy=(iteration_checkpoints[-1], gen_loss[-1]))
+
+    # Show label on the first data point
+    plt.annotate(text=f"{disc_loss[0]}", xy=(iteration_checkpoints[0], disc_loss[0]))
+    plt.annotate(text=f"{gen_loss[0]}", xy=(iteration_checkpoints[0], gen_loss[0]))
 
     # Ensure predictions exists
     if not os.path.exists(f"{dir}"):

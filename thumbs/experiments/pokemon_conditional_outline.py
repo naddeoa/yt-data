@@ -169,11 +169,11 @@ class PokemonExperiment(Experiment):
     def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
         return TrainBCEPatch(model, self.params, mparams, self.get_random_labels)
 
-    def custom_agumentation(
+    def custom_augmentation(
         self, image: tf.Tensor, outline: Optional[tf.Tensor] = None
     ) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
         assert outline is None
-        output = super().custom_agumentation(image, None)
+        output = super().custom_augmentation(image, None)
         assert isinstance(output, tuple)
         image, outline = output
 

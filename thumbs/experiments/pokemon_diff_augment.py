@@ -26,6 +26,7 @@ from keras.layers import (
     Dense,
     GaussianNoise,
     Dropout,
+    Conv2D,
     Flatten,
     Reshape,
     ReLU,
@@ -41,16 +42,18 @@ from keras.layers import (
 #     BatchNormalization,
 # )
 from tensorflow.compat.v1.keras.layers import BatchNormalization as BatchNormalizationV1
-from keras.layers.convolutional import Conv2D, Conv2DTranspose
 
 from thumbs.train import Train, TrainBCE, TrainWassersteinGP, TrainBCEPatch
 
 
-ngf = 64
-ndf = 128
+# ngf = 64
+# ndf = 128
 
 
 class PokemonModel(GanModel):
+    ngf = 64
+    ndf = 128
+
     def build_generator(self, z_dim):
         model = Sequential(name="generator")
 
@@ -83,18 +86,18 @@ class PokemonModel(GanModel):
         model = Sequential(name="discriminator")
 
         model.add(DiffAugmentLayer(input_shape=img_shape))
-        model.add(Conv2D(ndf, kernel_size=4, strides=2, padding="same", use_bias=False))
+        model.add(Conv2D(self.ndf, kernel_size=4, strides=2, padding="same", use_bias=False))
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(ndf * 2, kernel_size=4, strides=2, padding="same", use_bias=False))
+        model.add(Conv2D(self.ndf * 2, kernel_size=4, strides=2, padding="same", use_bias=False))
         model.add(InstanceNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(ndf * 4, kernel_size=4, strides=2, padding="same", use_bias=False))
+        model.add(Conv2D(self.ndf * 4, kernel_size=4, strides=2, padding="same", use_bias=False))
         model.add(InstanceNormalization())
         model.add(LeakyReLU(alpha=0.2))
 
-        model.add(Conv2D(ndf * 8, kernel_size=4, strides=2, padding="same", use_bias=False))
+        model.add(Conv2D(self.ndf * 8, kernel_size=4, strides=2, padding="same", use_bias=False))
         model.add(LeakyReLU(alpha=0.2))
 
         model.add(Flatten())

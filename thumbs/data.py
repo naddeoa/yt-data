@@ -17,7 +17,7 @@ from thumbs.util import normalize_image, unnormalize_image
 #
 # Resize, normalize, etc
 #
-def load_and_preprocess_image(img_path, size: Tuple[int, int, int], file_type: str = 'jpg'):
+def load_and_preprocess_image(img_path, size: Tuple[int, int, int], file_type: str = "jpg"):
     # Open the image file
     x, y, _ = size
     img = Image.open(img_path)
@@ -38,23 +38,20 @@ def load_and_preprocess_image(img_path, size: Tuple[int, int, int], file_type: s
 def get_cat_data(
     size: Tuple[int, int, int] = (128, 128, 3),
 ) -> np.ndarray:
-    data_dir = '/mnt/e/data/afhq/train/cat'
+    data_dir = "/mnt/e/data/afhq/train/cat"
 
     print(f"Images in {data_dir}")
     file_list = os.listdir(data_dir)
     print(file_list[:10])
     print(f"Found {len(file_list)} total files")
-    jpg_file_list = [ file for file in file_list if file.endswith(".jpg") or file.endswith('.jpeg') ]
+    jpg_file_list = [file for file in file_list if file.endswith(".jpg") or file.endswith(".jpeg")]
 
     print(f"Found {len(jpg_file_list)} jpgs")
 
-    jpgs = [
-        load_and_preprocess_image(f"{data_dir}/{img_path}", size)
-        for img_path in tqdm(jpg_file_list)
-    ]
+    jpgs = [load_and_preprocess_image(f"{data_dir}/{img_path}", size) for img_path in tqdm(jpg_file_list)]
 
     images = np.array(jpgs)
-    print(f'Shape of images: {images.shape}')
+    print(f"Shape of images: {images.shape}")
 
     if is_notebook():
         # Make sure the preprocessing worked
@@ -73,17 +70,14 @@ def get_pokemon_data(
     file_list = os.listdir(data_dir)
     print(file_list[:10])
     print(f"Found {len(file_list)} total files")
-    jpg_file_list = [ file for file in file_list if file.endswith(".jpg") or file.endswith('.jpeg') ]
+    jpg_file_list = [file for file in file_list if file.endswith(".jpg") or file.endswith(".jpeg")]
 
     print(f"Found {len(jpg_file_list)} jpgs")
 
-    jpgs = [
-        load_and_preprocess_image(f"{data_dir}/{img_path}", size)
-        for img_path in tqdm(jpg_file_list)
-    ]
+    jpgs = [load_and_preprocess_image(f"{data_dir}/{img_path}", size) for img_path in tqdm(jpg_file_list)]
 
     images = np.array(jpgs)
-    print(f'Shape of images: {images.shape}')
+    print(f"Shape of images: {images.shape}")
 
     if is_notebook():
         # Make sure the preprocessing worked
@@ -92,7 +86,6 @@ def get_pokemon_data(
         visualize_image_scatter(images)
 
     return images
-
 
 
 def get_yt_data(
@@ -124,10 +117,7 @@ def get_yt_data(
             if json_data["viewCount"] < min_views:
                 continue
 
-            if (
-                "shorts" in json_data["title"].lower()
-                or "shorts" in json_data["description"].lower()
-            ):
+            if "shorts" in json_data["title"].lower() or "shorts" in json_data["description"].lower():
                 continue
 
         thumbnail_data.append((file_path, file_name.replace(".jpg", "")))
@@ -208,9 +198,7 @@ def get_yt_data(
         # List of (pca, index, original)
         all_data = list(zip(pca_data, list(range(len(dataset))), dataset))
 
-        no_shorts_thumbnail_data = [
-            x for x in all_data if not is_above_line(x[0], p1, p2)
-        ]
+        no_shorts_thumbnail_data = [x for x in all_data if not is_above_line(x[0], p1, p2)]
 
         if is_notebook():
             scatter([x[0] for x in no_shorts_thumbnail_data])
@@ -239,14 +227,11 @@ def get_pokemon_data256(
     file_list = os.listdir(data_dir)
     print(file_list[:10])
     print(f"Found {len(file_list)} total files")
-    jpg_file_list = [ file for file in file_list if file.endswith(".jpg") or file.endswith('.jpeg') ]
+    jpg_file_list = [file for file in file_list if file.endswith(".jpg") or file.endswith(".jpeg")]
 
     print(f"Found {len(jpg_file_list)} jpgs")
 
-    jpgs = [
-        load_and_preprocess_image(f"{data_dir}/{img_path}", size)
-        for img_path in tqdm(jpg_file_list)
-    ]
+    jpgs = [load_and_preprocess_image(f"{data_dir}/{img_path}", size) for img_path in tqdm(jpg_file_list)]
 
     images = np.array(jpgs)
 
@@ -255,16 +240,15 @@ def get_pokemon_data256(
         # get vector of 36 random ints between 0 and len(images)
         ids = np.random.choice(len(images), 36)
         random_images = images[ids]
-        visualize_thumbnails(random_images, rows=6, cols=6, dir='/tmp', file_name='preview.jpg')
+        visualize_thumbnails(random_images, rows=6, cols=6, dir="/tmp", file_name="preview.jpg")
         visualize_image_scatter(images)
 
     return images
 
 
 def get_pokemon_and_types(
-    size: Tuple[int, int, int] = (128, 128, 3),
-    drop_megas = True # need to manually label
-) -> Tuple[List[Tuple[np.ndarray, List[str]]], List[str]] :
+    size: Tuple[int, int, int] = (128, 128, 3), drop_megas=True  # need to manually label
+) -> Tuple[Tuple[np.ndarray, np.ndarray, np.ndarray], List[str]]:
     """
     Gets the dataset of pokemon, which is a list of [image as ndarray, types as List[str]]
     Also gets all of the possible pokemon types as the second return value
@@ -274,27 +258,22 @@ def get_pokemon_and_types(
     file_list = os.listdir(data_dir)
     print(file_list[:10])
     print(f"Found {len(file_list)} total files")
-    jpg_file_list = [ file for file in file_list if file.endswith(".jpg") or file.endswith('.jpeg') ]
+    jpg_file_list = [file for file in file_list if file.endswith(".jpg") or file.endswith(".jpeg")]
     print(f"Found {len(jpg_file_list)} jpgs")
 
     # Get type/stat info
-    df = pd.read_csv('/home/anthony/workspace/yt-data/data/pokemon/stats.csv')
-    df = df.drop_duplicates(subset=['#'])
-    types: List[str] = list(set(df['Type 1'].unique().tolist() + df['Type 2'].unique().tolist()))
-    types = [type.lower() for type in types if type == type] # remove nan
+    df = pd.read_csv("/home/anthony/workspace/yt-data/data/pokemon/stats.csv")
+    df = df.drop_duplicates(subset=["#"])
+    types: List[str] = list(set(df["Type 1"].unique().tolist() + df["Type 2"].unique().tolist()))
+    types = [type.lower() for type in types if type == type]  # remove nan
     types.sort()
 
     # Can lookup the type info given a pokedex number
-    pokemon_types = {}
+    pokemon_types: Dict[str, Tuple[str, str]] = {}
     for index, row in df.iterrows():
-        type1 = row['Type 1'].lower()
-        type2 = row['Type 2']
-        both_types = [type1]
-        if type2 == type2:
-            both_types.append(type2.lower())
-
-        pokemon_types[row['#']] = both_types
-
+        type1 = row["Type 1"].lower()
+        type2 = row["Type 2"]
+        pokemon_types[row["#"]] = (type1, type2.lower() if isinstance(type2, str) else "[UNK]")
 
     def get_pokedex_num(name):
         # each name starts with some number of digits.  Find them all
@@ -307,22 +286,96 @@ def get_pokemon_and_types(
                 break
         return int("".join(numbers))
 
-    jpgs = [
-        (load_and_preprocess_image(f"{data_dir}/{img_path}", size), pokemon_types[get_pokedex_num(img_path)])
-        for img_path in tqdm(jpg_file_list)
-        if "-" not in img_path and drop_megas  # Drop mega evolutions and visual variants for now
-    ]
+    images = np.asarray(
+        [
+            load_and_preprocess_image(f"{data_dir}/{img_path}", size)
+            for img_path in tqdm(jpg_file_list)
+            # if "-" not in img_path  # Drop mega evolutions and visual variants for now
+        ]
+    )
+
+    type1 = np.asarray(
+        [
+            pokemon_types[get_pokedex_num(img_path)][0]
+            for img_path in tqdm(jpg_file_list)
+            # if "-" not in img_path  # Drop mega evolutions and visual variants for now
+        ]
+    )
+
+    type2 = np.asarray(
+        [
+            pokemon_types[get_pokedex_num(img_path)][1]
+            for img_path in tqdm(jpg_file_list)
+            # if "-" not in img_path  # Drop mega evolutions and visual variants for now
+        ]
+    )
 
 
     if is_notebook():
         # Get 36 random images
         # get vector of 36 random ints between 0 and len(images)
-        images = np.asarray(jpgs, dtype=object)
-        just_images = images[:, 0]
+        images = np.asarray(images, dtype=object)
+        just_images = images
         ids = np.random.choice(len(images), 36)
         random_images = just_images[ids]
-        visualize_thumbnails(random_images, rows=6, cols=6, dir='/tmp', file_name='preview.jpg')
-        visualize_image_scatter(just_images )
+        visualize_thumbnails(random_images, rows=6, cols=6, dir="/tmp", file_name="preview.jpg")
+        visualize_image_scatter(just_images)
 
-    return jpgs, types 
+    return (images, type1, type2), types
 
+
+def get_pokemon_and_pokedexno(
+    size: Tuple[int, int, int] = (128, 128, 3), drop_megas=False  # need to manually label
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Gets the dataset of pokemon, which is a list of [image as ndarray, types as List[str]]
+    Also gets all of the possible pokemon types as the second return value
+    """
+    data_dir = "/home/anthony/workspace/yt-data/data/pokemon"
+    print(f"Images in {data_dir}")
+    file_list = os.listdir(data_dir)
+    print(file_list[:10])
+    print(f"Found {len(file_list)} total files")
+    jpg_file_list = [file for file in file_list if file.endswith(".jpg") or file.endswith(".jpeg")]
+    print(f"Found {len(jpg_file_list)} jpgs")
+
+    # Get type/stat info
+
+    # Can lookup the type info given a pokedex number
+    def get_pokedex_num(name):
+        # each name starts with some number of digits.  Find them all
+        # and return them as a string
+        numbers = []
+        for c in name:
+            if c.isdigit():
+                numbers.append(c)
+            else:
+                break
+        return int("".join(numbers))
+
+    images = np.asarray(
+        [
+            load_and_preprocess_image(f"{data_dir}/{img_path}", size)
+            for img_path in tqdm(jpg_file_list)
+            # if "-" not in img_path  # Drop mega evolutions and visual variants for now
+        ]
+    )
+
+    pokedex_numbers = np.asarray(
+        [
+            get_pokedex_num(img_path)
+            for img_path in tqdm(jpg_file_list)
+            # if "-" not in img_path  # Drop mega evolutions and visual variants for now
+        ]
+    )
+
+    if is_notebook():
+        # Get 36 random images
+        # get vector of 36 random ints between 0 and len(images)
+        print(f"shapes {images.shape} {pokedex_numbers.shape}")
+        ids = np.random.choice(len(images), 36)
+        random_images = images[ids]
+        visualize_thumbnails(random_images, rows=6, cols=6)
+        visualize_image_scatter(images)
+
+    return images, pokedex_numbers

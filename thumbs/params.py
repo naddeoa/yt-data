@@ -15,6 +15,12 @@ class Sampler(Enum):
     CENSORED_NORMAL = 4
 
 
+# Create an enum
+class TurnMode(Enum):
+    NEW_SAMMPLES = 0
+    SAME_SAMPLES = 1
+
+
 @dataclass
 class HyperParams:
     latent_dim: int  # = 150
@@ -109,22 +115,28 @@ class MutableHyperParams:
     adam_b1: float  # = 0.5
     generator_turns: int = 1
     discriminator_turns: int = 1
-    checkpoint_interval: int = 200
+    checkpoint_interval: int = -1
     discriminator_training: bool = True
     generator_training: bool = True
     gradient_penalty_factor: float = 10
-    l1_loss_factor: float = 0
-    l2_loss_factor: float = 0
+    l1_loss_factor: Optional[float] = None
+    l2_loss_factor: Optional[float] = None
     discriminator_ones_zeroes_shape: tuple = ()
     g_clipnorm: Optional[float] = None
     d_clipnorm: Optional[float] = None
     dis_weight_decay: float = 0.004
     gen_weight_decay: float = 0.004
     adam_b2: float = 0.999  # = 0.5
+    discriminator_turns_mode: TurnMode = TurnMode.SAME_SAMPLES
+    generator_turns_mode: TurnMode = TurnMode.SAME_SAMPLES
+    notes: Optional[str] = None
 
     def __post_init__(self):
         if self.discriminator_ones_zeroes_shape == ():
             self.discriminator_ones_zeroes_shape = (self.batch_size, 1)
+
+        if self.checkpoint_interval == -1:
+            self.checkpoint_interval = self.sample_interval * 10
 
     def get_yaml(self) -> str:
         return str(yaml.dump(self.__dict__, indent=4))

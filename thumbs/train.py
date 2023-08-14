@@ -3,8 +3,8 @@ import json
 import numpy as np
 from thumbs.model.model import BuiltModel
 from thumbs.util import is_colab
-from thumbs.viz import show_loss_plot, show_samples, visualize_thumbnails
-from thumbs.params import HyperParams, MutableHyperParams
+from thumbs.viz import show_loss_plot, visualize_thumbnails
+from thumbs.params import HyperParams, MutableHyperParams, TurnMode
 from thumbs.loss import Loss
 from typing import List, Optional, Tuple, Any, Optional, Callable, Dict, Union
 from abc import ABC, abstractmethod
@@ -57,9 +57,9 @@ def save_iterations(iteration_path: str, iterations: int):
         f.write(str(iterations))
 
 
-def save_model(gan: tf.keras.Model, weight_path: str, iterations: int):
+def save_model(model: tf.keras.Model, weight_path: str, iterations: int):
     pathlib.Path(weight_path).mkdir(parents=True, exist_ok=True)
-    gan.save_weights(weight_path)
+    model.save_weights(weight_path)
 
 
 def load_weights(gan, weight_path: str):
@@ -169,19 +169,19 @@ class Train(ABC):
     def train_generator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         raise NotImplementedError()
 
+    def apply_discriminator_gradients(self, gradient) -> None:
+        if self.mparams.discriminator_training:
+            self.discriminator_optimizer.apply_gradients(zip(gradient, self.discriminator.trainable_variables))
+
+    def apply_generator_gradients(self, gradient) -> None:
+        if self.mparams.generator_training:
+            self.generator_optimizer.apply_gradients(zip(gradient, self.generator.trainable_variables))
+
     def train(self, dataset: tf.data.Dataset, start_iter=0):
         load_weights(self.generator, self.params.gen_weight_path)
         load_weights(self.discriminator, self.params.dis_weight_path)
 
         loss_dg: List[Tuple[float, float]] = []
-
-        if not self.mparams.discriminator_training:
-            self.discriminator.trainable = False
-            self.discriminator.compile()
-
-        if not self.mparams.generator_training:
-            self.generator.trainable = False
-            self.generator.compile()
 
         progress = tqdm(
             range(start_iter, self.mparams.iterations + 1),
@@ -200,7 +200,7 @@ class Train(ABC):
                 for d_turn in range(self.mparams.discriminator_turns):
                     cur_item: tuple = item
 
-                    if d_turn > 0:
+                    if d_turn > 0 and self.mparams.discriminator_turns_mode == TurnMode.NEW_SAMMPLES:
                         # Get a new random shuffle from the dataset for multiple turns
                         cur_item = dataset.__iter__().__next__()
 
@@ -214,7 +214,7 @@ class Train(ABC):
                     cur_item = item
                     z = self.params.latent_sample(self.mparams.batch_size)
 
-                    if g_turn > 0:
+                    if g_turn > 0 and self.mparams.generator_turns_mode == TurnMode.NEW_SAMMPLES:
                         # Get a new random shuffle from the dataset for multiple turns
                         cur_item = dataset.__iter__().__next__()
 
@@ -285,7 +285,7 @@ class Train(ABC):
         else:
             return False
 
-    def show_samples(self, file_name, rows=6, cols=6):
+    def show_samples(self, file_name=None, rows=6, cols=6):
         noise = self.params.latent_sample(rows * cols)
         if self.label_getter is not None:
             labels = self.label_getter(rows * cols)
@@ -351,20 +351,22 @@ class TrainWassersteinGP(Train):
         # Get the gradients w.r.t the discriminator loss
         d_gradient = tape.gradient(d_loss, self.discriminator.trainable_variables)
         # Update the weights of the discriminator using the discriminator optimizer
-        self.discriminator_optimizer.apply_gradients(zip(d_gradient, self.discriminator.trainable_variables))
+        self.apply_discriminator_gradients(d_gradient)
         return d_loss, other
 
     def generator_loss(self, disc_output, gen_output, target):
         loss = -tf.reduce_mean(disc_output)  # normal loss for wgan
-        l1_loss = self.mparams.l1_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
-        l2_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.square(target - gen_output))
-        total_gen_loss = loss + l1_loss + l2_loss
-
         losses = {"g_mean_loss": loss}
-        if self.mparams.l1_loss_factor > 0:
+        total_gen_loss = loss
+
+        if self.mparams.l1_loss_factor is not None:
+            l1_loss = self.mparams.l1_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
             losses["g_l1_loss"] = l1_loss
-        if self.mparams.l2_loss_factor > 0:
+            total_gen_loss += l1_loss
+        if self.mparams.l2_loss_factor is not None:
+            l2_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.square(target - gen_output))
             losses["g_l2_loss"] = l2_loss
+            total_gen_loss += l2_loss
 
         return total_gen_loss, losses
 
@@ -385,7 +387,7 @@ class TrainWassersteinGP(Train):
         gen_gradient = tape.gradient(g_loss, self.generator.trainable_variables)
 
         # Update the weights of the generator using the generator optimizer
-        self.generator_optimizer.apply_gradients(zip(gen_gradient, self.generator.trainable_variables))
+        self.apply_generator_gradients(gen_gradient)
         return g_loss, other
 
 
@@ -415,7 +417,7 @@ class TrainBCE(Train):
         grads = tape.gradient(d_loss, self.discriminator.trainable_weights)
 
         # Apply the gradients
-        self.discriminator_optimizer.apply_gradients(zip(grads, self.discriminator.trainable_weights))
+        self.apply_discriminator_gradients(grads)
 
         d_real_acc = tf.reduce_mean(tf.cast(tf.equal(real, tf.round(real_output)), tf.float32))
         d_fake_acc = tf.reduce_mean(tf.cast(tf.equal(fake, tf.round(fake_output)), tf.float32))
@@ -433,18 +435,18 @@ class TrainBCE(Train):
 
     def generator_loss(self, disc_generated_output, gen_output, target):
         gan_loss = tf.keras.losses.BinaryCrossentropy()(tf.ones_like(disc_generated_output), disc_generated_output)
-        l1_loss = 0
-        l2_loss = 0
-
         losses = {"g_bce_loss": gan_loss}
-        if self.mparams.l1_loss_factor > 0:
-            l1_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
+        total_gen_loss = gan_loss
+
+        if self.mparams.l1_loss_factor is not None:
+            l1_loss = self.mparams.l1_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
             losses["g_l1_loss"] = l1_loss
-        if self.mparams.l2_loss_factor > 0:
+            total_gen_loss += l1_loss
+        if self.mparams.l2_loss_factor is not None:
             l2_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.square(target - gen_output))
             losses["g_l2_loss"] = l2_loss
+            total_gen_loss += l2_loss
 
-        total_gen_loss = gan_loss + l1_loss + l2_loss
         return total_gen_loss, losses
 
     @tf.function
@@ -469,7 +471,7 @@ class TrainBCE(Train):
         grads = tape.gradient(loss, self.generator.trainable_weights)
 
         # Update the weights of the generator
-        self.generator_optimizer.apply_gradients(zip(grads, self.generator.trainable_weights))
+        self.apply_generator_gradients(grads)
         return loss, other
 
 
@@ -493,7 +495,7 @@ class TrainHinge(Train):
         gradients_of_discriminator = disc_tape.gradient(d_loss, self.discriminator.trainable_variables)
 
         # Apply the gradients
-        self.discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, self.discriminator.trainable_variables))
+        self.apply_discriminator_gradients(gradients_of_discriminator)
 
         losses = {
             "d_loss_fake": d_fake_loss,
@@ -504,18 +506,18 @@ class TrainHinge(Train):
 
     def generator_loss(self, disc_generated_output, gen_output, target):
         gen_loss = -tf.reduce_mean(disc_generated_output)  # We're just changing this to hinge loss, bro
-        l1_loss = 0
-        l2_loss = 0
-
         losses = {"g_loss": gen_loss}
-        if self.mparams.l1_loss_factor > 0:
-            l1_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
+        total_gen_loss = gen_loss
+
+        if self.mparams.l1_loss_factor is not None:
+            l1_loss = self.mparams.l1_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
             losses["g_l1_loss"] = l1_loss
-        if self.mparams.l2_loss_factor > 0:
+            total_gen_loss += l1_loss
+        if self.mparams.l2_loss_factor is not None:
             l2_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.square(target - gen_output))
             losses["g_l2_loss"] = l2_loss
+            total_gen_loss += l2_loss
 
-        total_gen_loss = gen_loss + l1_loss + l2_loss
         return total_gen_loss, losses
 
     @tf.function
@@ -540,7 +542,7 @@ class TrainHinge(Train):
         grads = tape.gradient(loss, self.generator.trainable_weights)
 
         # Update the weights of the generator
-        self.generator_optimizer.apply_gradients(zip(grads, self.generator.trainable_weights))
+        self.apply_generator_gradients(grads)
         return loss, other
 
 
@@ -568,7 +570,7 @@ class TrainBCEPatch(Train):
             d_loss = 0.5 * (d_loss_real + d_loss_fake)
 
         gradients_of_discriminator = disc_tape.gradient(d_loss, self.discriminator.trainable_variables)
-        self.discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, self.discriminator.trainable_variables))
+        self.apply_discriminator_gradients(gradients_of_discriminator)
 
         d_real_acc = tf.reduce_mean(tf.cast(tf.math.greater_equal(real_output, 0.0), tf.float32))
         d_fake_acc = tf.reduce_mean(tf.cast(tf.math.less(fake_output, 0.0), tf.float32))
@@ -585,19 +587,18 @@ class TrainBCEPatch(Train):
 
     def generator_loss(self, disc_generated_output, gen_output, target):
         gan_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(tf.ones_like(disc_generated_output), disc_generated_output)
-
-        l1_loss = 0
-        l2_loss = 0
-
         losses = {"g_bce_loss": gan_loss}
-        if self.mparams.l1_loss_factor > 0:
+        total_gen_loss = gan_loss
+
+        if self.mparams.l1_loss_factor is not None:
             l1_loss = self.mparams.l1_loss_factor * tf.reduce_mean(tf.abs(target - gen_output))
             losses["g_l1_loss"] = l1_loss
-        if self.mparams.l2_loss_factor > 0:
+            total_gen_loss += l1_loss
+        if self.mparams.l2_loss_factor is not None:
             l2_loss = self.mparams.l2_loss_factor * tf.reduce_mean(tf.square(target - gen_output))
             losses["g_l2_loss"] = l2_loss
+            total_gen_loss += l2_loss
 
-        total_gen_loss = gan_loss + l1_loss + l2_loss
         return total_gen_loss, losses
 
     @tf.function
@@ -623,5 +624,5 @@ class TrainBCEPatch(Train):
         grads = tape.gradient(loss, self.generator.trainable_weights)
 
         # Update the weights of the generator
-        self.generator_optimizer.apply_gradients(zip(grads, self.generator.trainable_weights))
+        self.apply_generator_gradients(grads)
         return loss, other

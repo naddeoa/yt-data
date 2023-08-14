@@ -1,5 +1,8 @@
 
 # To try
+- Add new conv and transfer the weights of prev models to prog grow to 256x256
+- restart training but use the trained disciminator next time
+
 - Add dense layers at the end of the convolutions for global view
 - Skip connections in the deeper models for the strdie=1 layers
 - R1 penalty
@@ -21,7 +24,8 @@
     - Seems a little better than just doing data augmentation outside of the model
 - DONE Inception score
     - in the evaluation notebook
-
+- DONE get rid off all non-conv
+    - Just used kernel=4,stride=1 to go from original latent space to higher dimensions https://github.com/davidADSP/Generative_Deep_Learning_2nd_Edition/blob/main/notebooks/04_gan/02_wgan_gp/wgan_gp.ipynb
 
 # Questions
 - is gelu 1-Lipschitz? It appears to be but I don't feel confident yet.

@@ -264,9 +264,9 @@ class PokemonExperiment(Experiment):
     def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
         return TrainWassersteinGP(model, self.params, mparams, self.get_random_labels)
 
-    def custom_agumentation(self, images: tf.Tensor, type_labels: Optional[tf.Tensor] = None) -> Union[tf.Tensor, tuple]:
+    def custom_augmentation(self, images: tf.Tensor, type_labels: Optional[tf.Tensor] = None) -> Union[tf.Tensor, tuple]:
         assert type_labels is not None
-        output = super().custom_agumentation(images, None)
+        output = super().custom_augmentation(images, None)
         assert not isinstance(output, tuple)
         images = output
 
