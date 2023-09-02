@@ -38,7 +38,7 @@ class Experiment(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_data(self) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    def get_data(self) -> Union[tf.data.Dataset, np.ndarray, Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]]:
         raise NotImplementedError()
 
     def augment_data(self) -> bool:
@@ -127,7 +127,10 @@ params:
             i = loaded_i + 1  # we already did this iteration and it was saved so add one
         else:
             i = 0
-        dataset = tf.data.Dataset.from_tensor_slices(self.get_data())
+
+        dataset = self.get_data()
+        if not isinstance(dataset, tf.data.Dataset):
+            dataset = tf.data.Dataset.from_tensor_slices(dataset)
 
         while True:
             try:

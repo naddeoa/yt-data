@@ -48,9 +48,9 @@ class GanModel(ABC):
         )
 
         discriminator.summary(line_length=200)
-        tf.keras.utils.plot_model(discriminator, to_file=self.params.dis_diagram_path, show_shapes=True, dpi=64)
+        tf.keras.utils.plot_model(discriminator, to_file=self.params.dis_diagram_path, show_shapes=True, dpi=64, expand_nested=True)
         generator.summary(line_length=200)
-        tf.keras.utils.plot_model(generator, to_file=self.params.gen_diagram_path, show_shapes=True, dpi=64)
+        tf.keras.utils.plot_model(generator, to_file=self.params.gen_diagram_path, show_shapes=True, dpi=64, expand_nested=True)
 
         return BuiltModel(
             discriminator=discriminator,

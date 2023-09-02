@@ -1,4 +1,5 @@
 import json
+import tensorflow as tf
 import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn.preprocessing import MultiLabelBinarizer
@@ -219,6 +220,24 @@ def get_yt_data(
     return np.asarray(no_shorts_dataset)
 
 
+def get_wow_icons_64() -> tf.data.Dataset:
+    def load_image(file_path):
+        img = tf.io.read_file(file_path)
+        img = tf.image.decode_jpeg(img, channels=3)
+        img = tf.image.resize(img, [64, 64])
+        img = (img - 127.5) / 127.5  # Normalize to [-1,1]
+        return img
+
+    dataset = tf.data.Dataset.list_files("/mnt/e/data/wow-icons/*.PNG").map(load_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    # num_items = 0
+    # for _ in dataset:
+    #     num_items += 1
+
+    # print(f"Found {num_items} wow icons.")
+
+    return dataset
+
+
 def get_pokemon_data256(
     size: Tuple[int, int, int] = (128, 128, 3),
 ) -> np.ndarray:
@@ -309,7 +328,6 @@ def get_pokemon_and_types(
             # if "-" not in img_path  # Drop mega evolutions and visual variants for now
         ]
     )
-
 
     if is_notebook():
         # Get 36 random images
