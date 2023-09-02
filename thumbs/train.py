@@ -124,6 +124,8 @@ class DefaultInputMapper(InputMapper):
 
 class Train(ABC):
     # label_getter is a function that takes a number and returns an array of np.ndarray
+    losses: Dict[str, List[float]]
+
     def __init__(
         self,
         built_model: BuiltModel,
@@ -142,7 +144,20 @@ class Train(ABC):
         self.params = params
         self.loss = Loss(params)
 
-        self.losses: List[Tuple[float, float]] = load_from_json(self.params.loss_path) or []
+        losses = load_from_json(self.params.loss_path) or {}
+        if isinstance(losses, list):
+            # The older format was a List[Tuple[flaot, float]] so those have to be converted to the dict format.
+            # The floats were the discriminator and generator loss, respectively.
+            print(f"Converting {len(losses)} losses to dict format")
+            self.losses = {
+                "Discriminator Loss": [l[0] for l in losses],
+                "Generator Loss": [l[1] for l in losses],
+            }
+        elif isinstance(losses, dict):
+            self.losses = losses
+        else:
+            raise Exception(f"Unknown loss format: {losses}")
+
         self.accuracies: List[float] = load_from_json(self.params.accuracy_path) or []
         self.iteration_checkpoints: List[int] = load_from_json(self.params.iteration_checkpoints_path) or []
         self.accuracies_rf: List[Tuple[float, float]] = []
@@ -156,17 +171,26 @@ class Train(ABC):
         print(mparams)
 
         print()
-        print(f"Restored losses: {len(self.losses)}")
+        retored_losses_count: int
+        if len(self.losses) == 0:
+            retored_losses_count = 0
+        else:
+            retored_losses_count = len(self.losses[list(self.losses.keys())[0]])
+
+        print(f"Restored losses: {retored_losses_count}")
         print(f"Restored iterations: {len(self.iteration_checkpoints)}")
         print("------------------------------------------------------------")
 
-    # TODO make these return a (tensor, dict) where the dict has all of the components of the loss
     @abstractmethod
-    def train_discriminator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def get_loss_plot(self, losses: Dict[str, Union[float, tf.Tensor]]) -> Dict[str, float]:
         raise NotImplementedError()
 
     @abstractmethod
-    def train_generator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def train_body(self, data: tuple, dataset: tf.data.Dataset) -> Dict[str, Union[float, tf.Tensor]]:
+        """
+        Returns a dict of loss and loss components. For a gan, copmponents might
+        include the real/fake loss and the discriminator/generator loss. Other modles might just have one.
+        """
         raise NotImplementedError()
 
     def apply_discriminator_gradients(self, gradient) -> None:
@@ -181,7 +205,7 @@ class Train(ABC):
         load_weights(self.generator, self.params.gen_weight_path)
         load_weights(self.discriminator, self.params.dis_weight_path)
 
-        loss_dg: List[Tuple[float, float]] = []
+        loss: Dict[str, List[float]] = {}
 
         progress = tqdm(
             range(start_iter, self.mparams.iterations + 1),
@@ -194,51 +218,31 @@ class Train(ABC):
         for iteration in progress:
             # Google colab can't handle two progress bars, so overwrite the epoch one each time.
             for item in tqdm(dataset, position=1 if not is_colab() else 0, leave=False if not is_colab() else True, desc="batch"):
-                # -------------------------
-                #  Train the Discriminator
-                # -------------------------
-                for d_turn in range(self.mparams.discriminator_turns):
-                    cur_item: tuple = item
+                losses = self.train_body(item, dataset)
 
-                    if d_turn > 0 and self.mparams.discriminator_turns_mode == TurnMode.NEW_SAMMPLES:
-                        # Get a new random shuffle from the dataset for multiple turns
-                        cur_item = dataset.__iter__().__next__()
-
-                    z = self.params.latent_sample(self.mparams.batch_size)
-                    d_loss, d_other = self.train_discriminator(z, cur_item)
-
-                # ---------------------
-                #  Train the Generator
-                # ---------------------
-                for g_turn in range(self.mparams.generator_turns):
-                    cur_item = item
-                    z = self.params.latent_sample(self.mparams.batch_size)
-
-                    if g_turn > 0 and self.mparams.generator_turns_mode == TurnMode.NEW_SAMMPLES:
-                        # Get a new random shuffle from the dataset for multiple turns
-                        cur_item = dataset.__iter__().__next__()
-
-                    g_loss, g_other = self.train_generator(z, cur_item)
-
-                postfix = to_postfix(d_loss, g_loss, d_other, g_other)
-                progress.set_postfix(postfix)
-                loss_dg.append((float(d_loss), float(g_loss)))
+                progress.set_postfix(losses)
+                for k, v in self.get_loss_plot(losses).items():
+                    if k not in loss:
+                        loss[k] = []
+                    loss[k].append(float(v))
 
             updated = self.save_sample(
                 iteration=iteration,
-                loss_dg=loss_dg,
+                loss=loss,
             )
+
             if is_colab():
-                print(postfix)
+                print(losses)
+
             if updated:
-                loss_dg = []
+                loss = {}
 
             yield iteration
 
     def save_sample(
         self,
         iteration: int,
-        loss_dg: List[Tuple[float, float]],
+        loss: Dict[str, List[float]],
     ) -> bool:
         sample_interval = self.mparams.sample_interval
         checkpoint_path = self.params.checkpoint_path
@@ -260,8 +264,14 @@ class Train(ABC):
             self.discriminator.save_weights(self.params.dis_weight_path)
             save_iterations(self.params.iteration_path, iteration)
 
-            self.losses.append(np.mean(loss_dg, axis=0).tolist())
             self.iteration_checkpoints.append(iteration)
+
+            # The content of loss should be turned into a Dict[str, float] by taking the mean of the values, and then
+            # Each one shoudl be appended to the values stored in self.losses
+            for k, v in loss.items():
+                if k not in self.losses:
+                    self.losses[k] = []
+                self.losses[k].append(np.mean(v, axis=0).tolist())
 
             # save_as_json(self.accuracies, self.params.accuracy_path)
             save_as_json(self.losses, self.params.loss_path)
@@ -276,9 +286,11 @@ class Train(ABC):
                 file_name=file_name,
             )
 
-            # most recent data only
+            # Show the plot again but only use the last 50 items for each series
+            most_recent = {k: v[-50:] for k, v in self.losses.items()}
+
             show_loss_plot(
-                self.losses[-50:], self.iteration_checkpoints[-50:], dir=self.params.prediction_path, file_name="zoom", save_as_latest=False
+                most_recent, self.iteration_checkpoints[-50:], dir=self.params.prediction_path, file_name="zoom", save_as_latest=False
             )
 
             return True
@@ -297,7 +309,63 @@ class Train(ABC):
         visualize_thumbnails(generated_thumbnails, rows, cols, dir, file_name)
 
 
-class TrainWassersteinGP(Train):
+class TrainGAN(Train):
+    @abstractmethod
+    def train_discriminator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def train_generator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+        raise NotImplementedError()
+
+    def train_body(self, item: tuple, dataset: tf.data.Dataset) -> Dict[str, Union[float, tf.Tensor]]:
+        # -------------------------
+        #  Train the Discriminator
+        # -------------------------
+        for d_turn in range(self.mparams.discriminator_turns):
+            cur_item: tuple = item
+
+            if d_turn > 0 and self.mparams.discriminator_turns_mode == TurnMode.NEW_SAMMPLES:
+                # Get a new random shuffle from the dataset for multiple turns
+                cur_item = dataset.__iter__().__next__()
+
+            z = self.params.latent_sample(self.mparams.batch_size)
+            d_loss, d_other = self.train_discriminator(z, cur_item)
+
+        # ---------------------
+        #  Train the Generator
+        # ---------------------
+        for g_turn in range(self.mparams.generator_turns):
+            cur_item = item
+            z = self.params.latent_sample(self.mparams.batch_size)
+
+            if g_turn > 0 and self.mparams.generator_turns_mode == TurnMode.NEW_SAMMPLES:
+                # Get a new random shuffle from the dataset for multiple turns
+                cur_item = dataset.__iter__().__next__()
+
+            g_loss, g_other = self.train_generator(z, cur_item)
+
+        # postfix = to_postfix(d_loss, g_loss, d_other, g_other)
+        # progress.set_postfix(postfix)
+        # loss.append((float(d_loss), float(g_loss)))
+
+        d_other_float = {k: float(v) for k, v in d_other.items()}
+        g_other_float = {k: float(v) for k, v in g_other.items()}
+        return {
+            "d_loss": float(d_loss),
+            "g_loss": float(g_loss),
+            **d_other_float ,
+            **g_other_float,
+        }
+
+    def get_loss_plot(self, losses: Dict[str, Union[float, tf.Tensor]]) -> Dict[str, float]:
+        return {
+            "Discriminator Loss": float(losses["d_loss"]),
+            "Generator Loss": float(losses["g_loss"]),
+        }
+
+
+class TrainWassersteinGP(TrainGAN):
     def gradient_penalty(self, fake_images, data: tuple):
         """Calculates the gradient penalty.
 
@@ -391,7 +459,7 @@ class TrainWassersteinGP(Train):
         return g_loss, other
 
 
-class TrainBCE(Train):
+class TrainBCE(TrainGAN):
     """
     BCE with an additional loss based on cosine similarity
     """
@@ -475,7 +543,7 @@ class TrainBCE(Train):
         return loss, other
 
 
-class TrainHinge(Train):
+class TrainHinge(TrainGAN):
     @tf.function
     def train_discriminator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         generator_input = self.input_mapper.get_generator_input(data, z)
@@ -546,7 +614,7 @@ class TrainHinge(Train):
         return loss, other
 
 
-class TrainBCEPatch(Train):
+class TrainBCEPatch(TrainGAN):
     """
     BCE based on patch output logits from the discriminator, not a single sigmoid output.
     """

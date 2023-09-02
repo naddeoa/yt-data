@@ -11,6 +11,7 @@ import numpy as np
 from thumbs.util import is_notebook, get_current_time
 from thumbs.util import normalize_image, unnormalize_image
 from datetime import datetime
+from typing import List, Tuple, Iterator, Optional, Union, Dict
 
 
 def show_accuracy_plot(accuracies_rf, iteration_checkpoints, dir: str, file_name: str) -> None:
@@ -42,7 +43,7 @@ def show_accuracy_plot(accuracies_rf, iteration_checkpoints, dir: str, file_name
     plt.close()
 
 
-def show_loss_plot(losses, iteration_checkpoints, dir: str, file_name: str, save_as_latest: bool = True) -> None:
+def show_loss_plot_gan(losses: List[Tuple[float, float]], iteration_checkpoints: List[int], dir: str, file_name: str, save_as_latest: bool = True) -> None:
     losses_np = np.asarray(losses)
     disc_loss = losses_np.T[0]
     gen_loss = losses_np.T[1]
@@ -66,6 +67,38 @@ def show_loss_plot(losses, iteration_checkpoints, dir: str, file_name: str, save
     # Show label on the first data point
     plt.annotate(text=f"{disc_loss[0]}", xy=(iteration_checkpoints[0], disc_loss[0]))
     plt.annotate(text=f"{gen_loss[0]}", xy=(iteration_checkpoints[0], gen_loss[0]))
+
+    # Ensure predictions exists
+    if not os.path.exists(f"{dir}"):
+        os.mkdir(f"{dir}")
+
+    if save_as_latest:
+        plt.savefig(f"{dir}/_latest-loss.jpg")
+    plt.savefig(f"{dir}/loss-{file_name}.jpg")
+    plt.close()
+
+def show_loss_plot(losses: Dict[str, List[float]], iteration_checkpoints, dir: str, file_name: str, save_as_latest: bool = True) -> None:
+    """
+    Does the same thing as show_loss_plot_gan but it doesn't assume two series of losses.
+    """
+    plt.figure(figsize=(10, 2))
+    for label, loss in losses.items():
+        plt.plot(iteration_checkpoints, loss, label=label)
+
+    plt.xticks(iteration_checkpoints, rotation=90)
+
+    plt.title("Training Loss")
+    plt.xlabel("Iteration")
+    plt.ylabel("Loss")
+    plt.legend()
+
+    # Show label on the last data point
+    for label, loss in losses.items():
+        plt.annotate(text=f"{loss[-1]}", xy=(iteration_checkpoints[-1], loss[-1]))
+
+    # Show label on the first data point
+    for label, loss in losses.items():
+        plt.annotate(text=f"{loss[0]}", xy=(iteration_checkpoints[0], loss[0]))
 
     # Ensure predictions exists
     if not os.path.exists(f"{dir}"):
