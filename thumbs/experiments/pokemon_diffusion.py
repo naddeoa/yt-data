@@ -10,11 +10,11 @@ from rangedict import RangeDict
 import numpy as np
 
 from thumbs.diff_augmentation import DiffAugmentLayer
-from thumbs.experiment import Experiment
+from thumbs.experiment import DiffusionExperiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_and_pokedexno, normalize_image, unnormalize_image, get_wow_icons_64, get_pokemon_data256
-from thumbs.params import DiffusionHyperParams, HyperParams, GanHyperParams, Sampler, MutableHyperParams
-from thumbs.model.model import GanModel, BuiltGANModel, FrameworkModel, DiffusionModel
+from thumbs.params import DiffusionHyperParams, HyperParams, Sampler, MutableHyperParams
+from thumbs.model.model import GanModel, BuiltDiffusionModel, FrameworkModel, DiffusionModel
 
 from tensorflow_addons.layers import InstanceNormalization, SpectralNormalization
 from tensorflow.keras.models import Model
@@ -42,7 +42,7 @@ from keras.layers import (
 )
 from tensorflow.compat.v1.keras.layers import BatchNormalization as BatchNormalizationV1
 
-from thumbs.train import Train, TrainBCE, TrainWassersteinGP, TrainBCEPatch, TrainHinge
+from thumbs.train import Train, TrainDiffusion
 from tensorflow.keras.layers import Layer
 
 tf.keras.layers.Dropout  # TODO is this different than keras.layers.Dropout? Is it still broken?
@@ -114,7 +114,7 @@ class MyModel(DiffusionModel):
         return Model([img_input, t_input], output, name="diffusion_model")
 
 
-class MyExperiment(Experiment):
+class MyExperiment(DiffusionExperiment):
     def __init__(self) -> None:
         super().__init__()
         self.data = get_wow_icons_64()
@@ -125,11 +125,8 @@ class MyExperiment(Experiment):
     def get_data(self) -> tf.data.Dataset:
         return self.data
 
-    def get_train(self, model: BuiltGANModel, mparams: MutableHyperParams) -> Train:
-        # return TrainBCEPatch(model, self.params, mparams)
-        # return TrainBCE(model, self.params, mparams)
-        # return TrainHinge(model, self.params, mparams)
-        return TrainWassersteinGP(model, self.params, mparams)
+    def get_train(self, model: BuiltDiffusionModel, mparams: DiffusionHyperParams) -> Train:
+        return TrainDiffusion(model, self.params, mparams)
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
@@ -139,8 +136,6 @@ class MyExperiment(Experiment):
             adam_b1=0.5,
             iterations=10000,
             sample_interval=1,
-            generator_turns=1,
-            discriminator_turns=3,
             notes="""
 First take at diffusion. Lets see.
 """,
@@ -156,7 +151,7 @@ First take at diffusion. Lets see.
             sampler=Sampler.NORMAL,
         )
 
-    def get_model(self, mparams: GanHyperParams) -> FrameworkModel:
+    def get_model(self, mparams: DiffusionHyperParams) -> FrameworkModel:
         return MyModel(self.params, mparams)
 
 

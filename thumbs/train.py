@@ -306,6 +306,12 @@ class Train(ABC, Generic[MParams, BuiltModel]):
 
 class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
 
+    def get_loss_plot(self, losses: Dict[str, Union[float, tf.Tensor]]) -> Dict[str, float]:
+        pass # TODO
+
+    def show_samples(self, file_name=None, rows=6, cols=6):
+        pass # TODO
+
     def load_weights(self):
         pass # TODO
 

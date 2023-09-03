@@ -8,7 +8,7 @@ from typing import List, Tuple, Iterator, Optional, Union
 from rangedict import RangeDict
 import numpy as np
 
-from thumbs.experiment import Experiment
+from thumbs.experiment import GanExperiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_data256, normalize_image, unnormalize_image
 from thumbs.params import HyperParams, GanHyperParams
@@ -120,7 +120,7 @@ class PokemonModel(GanModel):
         return None
 
 
-class PokemonExperiment(Experiment):
+class PokemonExperiment(GanExperiment):
     def __init__(self) -> None:
         super().__init__()
         self.zoom_factor = 0.98

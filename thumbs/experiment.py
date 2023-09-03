@@ -1,12 +1,12 @@
 import tensorflow as tf
 import textwrap
 from thumbs.viz import show_samples
-from thumbs.params import HyperParams, MutableHyperParams
+from thumbs.params import HyperParams, MutableHyperParams, GanHyperParams, DiffusionHyperParams
 import os
 from rangedict import RangeDict
 import numpy as np
 from thumbs.train import Train, load_iterations
-from thumbs.model.model import GanModel, BuiltGANModel, FrameworkModel
+from thumbs.model.model import GanModel, BuiltGANModel, FrameworkModel, BuiltDiffusionModel
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Iterator, Union, Optional, TypeVar, Generic
 from scipy.ndimage import rotate
@@ -14,7 +14,9 @@ from PIL import Image
 
 Params = TypeVar("Params", bound=MutableHyperParams)
 
-class Experiment(ABC, Generic[Params]):
+BuiltModel = TypeVar("BuiltModel", bound=Union[BuiltGANModel, BuiltDiffusionModel])
+
+class Experiment(ABC, Generic[Params, BuiltModel]):
     def __init__(self) -> None:
         self.params = self.get_params()
         self.zoom_factor = 0.95
@@ -23,7 +25,7 @@ class Experiment(ABC, Generic[Params]):
         self.augment_zooms = True
 
     @abstractmethod
-    def get_train(self, model: BuiltGANModel, mparams: Params) -> Train:
+    def get_train(self, model: BuiltModel, mparams: Params) -> Train:
         raise NotImplementedError()
 
     @abstractmethod
@@ -35,7 +37,7 @@ class Experiment(ABC, Generic[Params]):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_model(self, mparams: MutableHyperParams) -> FrameworkModel:
+    def get_model(self, mparams: Params) -> FrameworkModel:
         raise NotImplementedError()
 
     @abstractmethod
@@ -44,33 +46,6 @@ class Experiment(ABC, Generic[Params]):
 
     def augment_data(self) -> bool:
         return True
-
-    def get_samples(self):
-        schedule = self.get_mutable_params()
-        mparams: MutableHyperParams = schedule[0]
-        model = self.get_model(mparams).build()
-
-        show_samples(
-            model.generator,
-            self.get_params().latent_dim,
-            file_name="",
-            dir="",
-            rows=6,
-            cols=6,
-        )
-
-    def rotate_tensor(self, image_tf: tf.Tensor) -> tf.Tensor:
-        # Assuming you have an image file called 'image.jpg'
-        # Load the image using PIL (Python Imaging Library)
-        image = image_tf.numpy()
-
-        # Rotate the image array by 20 degrees counterclockwise
-        rotated_array = rotate(image, angle=20, reshape=False, mode="")
-
-        # Convert the rotated array back to a PIL image
-        rotated_tensor: tf.Tensor = tf.convert_to_tensor(rotated_array)
-
-        return rotated_tensor
 
     def custom_agumentation(self, image: tf.Tensor, labels: Optional[tf.Tensor] = None) -> Union[tf.Tensor, tuple]:
         """
@@ -95,7 +70,7 @@ class Experiment(ABC, Generic[Params]):
 
         return image if labels is None else (image, labels)
 
-    def prepare_data(self, dataset: tf.data.Dataset, mparams: MutableHyperParams) -> tf.data.Dataset:
+    def prepare_data(self, dataset: tf.data.Dataset, mparams: Params) -> tf.data.Dataset:
         d = dataset.shuffle(buffer_size=1000)
 
         if self.augment_data():
@@ -150,3 +125,11 @@ params:
 
             for j in train.train(self.prepare_data(dataset, mparams), start_iter=i):
                 i = j
+
+
+class GanExperiment(Experiment[GanHyperParams, BuiltGANModel]):
+    pass
+
+
+class DiffusionExperiment(Experiment[DiffusionHyperParams, BuiltDiffusionModel]):
+    pass

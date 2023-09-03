@@ -10,7 +10,7 @@ from rangedict import RangeDict
 import numpy as np
 
 from thumbs.diff_augmentation import DiffAugmentLayer
-from thumbs.experiment import Experiment
+from thumbs.experiment import GanExperiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_and_pokedexno, normalize_image, unnormalize_image, get_wow_icons_64
 from thumbs.params import HyperParams, GanHyperParams, Sampler
@@ -93,7 +93,7 @@ class MyModel(GanModel):
         return model
 
 
-class MyExperiment(Experiment):
+class MyExperiment(GanExperiment):
     def __init__(self) -> None:
         super().__init__()
         self.data = get_wow_icons_64()

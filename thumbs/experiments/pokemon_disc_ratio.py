@@ -5,7 +5,7 @@ from typing import List, Tuple, Iterator, Optional, Union
 from rangedict import RangeDict
 import numpy as np
 
-from thumbs.experiment import Experiment
+from thumbs.experiment import GanExperiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_data256
 from thumbs.params import HyperParams, GanHyperParams
@@ -92,7 +92,7 @@ class PokemonModel(GanModel):
         return model
 
 
-class PokemonExperiment(Experiment):
+class PokemonExperiment(GanExperiment):
     def get_data(self) -> np.ndarray:
         return get_pokemon_data256(self.params.img_shape)
 

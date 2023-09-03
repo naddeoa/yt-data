@@ -8,7 +8,7 @@ from typing import List, Tuple, Iterator, Optional, Union
 from rangedict import RangeDict
 import numpy as np
 
-from thumbs.experiment import Experiment
+from thumbs.experiment import GanExperiment, Experiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_data256, normalize_image, unnormalize_image
 from thumbs.params import HyperParams, GanHyperParams
@@ -149,7 +149,7 @@ class PokemonSkipModel(GanModel):
         return None
 
 
-class PokemonExperiment(Experiment):
+class PokemonExperiment(GanExperiment):
     def __init__(self) -> None:
         super().__init__()
         self.zoom_factor = 0.98
@@ -173,7 +173,7 @@ class PokemonExperiment(Experiment):
         self, image: tf.Tensor, outline: Optional[tf.Tensor] = None
     ) -> Union[tf.Tensor, Tuple[tf.Tensor, Optional[tf.Tensor]]]:
         assert outline is None
-        output = super().custom_augmentation(image, None)
+        output = Experiment.custom_agumentation(self, image, None)
         assert isinstance(output, tuple)
         image, outline = output
 

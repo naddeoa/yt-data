@@ -10,11 +10,11 @@ from rangedict import RangeDict
 import numpy as np
 
 from thumbs.diff_augmentation import DiffAugmentLayer
-from thumbs.experiment import Experiment
+from thumbs.experiment import GanExperiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_and_pokedexno, normalize_image, unnormalize_image, get_wow_icons_64
 from thumbs.params import HyperParams, GanHyperParams, Sampler
-from thumbs.model.model import GanModel, BuiltModel
+from thumbs.model.model import GanModel, BuiltGANModel
 
 from tensorflow_addons.layers import InstanceNormalization, SpectralNormalization
 from tensorflow.keras.models import Model
@@ -191,7 +191,7 @@ class MyModel(GanModel):
         return model
 
 
-class MyExperiment(Experiment):
+class MyExperiment(GanExperiment):
     def __init__(self) -> None:
         super().__init__()
         self.data = get_wow_icons_64()
@@ -202,7 +202,7 @@ class MyExperiment(Experiment):
     def get_data(self) -> tf.data.Dataset:
         return self.data
 
-    def get_train(self, model: BuiltModel, mparams: GanHyperParams) -> Train:
+    def get_train(self, model: BuiltGANModel, mparams: GanHyperParams) -> Train:
         # return TrainBCEPatch(model, self.params, mparams)
         # return TrainBCE(model, self.params, mparams)
         # return TrainHinge(model, self.params, mparams)
@@ -222,10 +222,8 @@ class MyExperiment(Experiment):
             g_clipnorm=0.001,
             d_clipnorm=0.001,
             gradient_penalty_factor=10.0,
-
-            gen_weight_decay=0, # Add back in after a while
+            gen_weight_decay=0,  # Add back in after a while
             dis_weight_decay=0,
-
             notes="""
 I give up on pokemon. Nothing is any better than anything else I've tried. I think I just need to do something that actually has data.
 """,
