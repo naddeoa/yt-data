@@ -8,8 +8,8 @@ import numpy as np
 from thumbs.experiment import Experiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_data256
-from thumbs.params import HyperParams, MutableHyperParams
-from thumbs.model.model import GanModel, BuiltModel
+from thumbs.params import HyperParams, GanHyperParams
+from thumbs.model.model import GanModel, BuiltGANModel
 
 from keras.models import Sequential
 from keras.layers import Dense, Reshape, Conv2DTranspose, Flatten, LeakyReLU
@@ -92,12 +92,12 @@ class PokemonExperiment(Experiment):
     def get_data(self) -> np.ndarray:
         return get_pokemon_data256(self.params.img_shape)
 
-    def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
+    def get_train(self, model: BuiltGANModel, mparams: GanHyperParams) -> Train:
         return TrainWassersteinGP(model, self.params, mparams)
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 5600] = MutableHyperParams(
+        schedule[0, 5600] = GanHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
             batch_size=32,
@@ -109,7 +109,7 @@ class PokemonExperiment(Experiment):
             checkpoint_interval=400,
         )
 
-        schedule[5601, 6400] = MutableHyperParams(
+        schedule[5601, 6400] = GanHyperParams(
             gen_learning_rate=0.0001,
             dis_learning_rate=0.0002,
             batch_size=32,
@@ -121,7 +121,7 @@ class PokemonExperiment(Experiment):
             checkpoint_interval=400,
         )
 
-        schedule[6401, 20500] = MutableHyperParams(
+        schedule[6401, 20500] = GanHyperParams(
             gen_learning_rate=0.00002,
             dis_learning_rate=0.0002,
             batch_size=32,
@@ -134,7 +134,7 @@ class PokemonExperiment(Experiment):
         )
 
         # Freezing disc to let the generator catch up
-        schedule[20501, 100000] = MutableHyperParams(
+        schedule[20501, 100000] = GanHyperParams(
             gen_learning_rate=0.000006,
             dis_learning_rate=0.00002,
             batch_size=32,
@@ -171,7 +171,7 @@ class PokemonExperiment(Experiment):
             similarity_penalty=20,
         )
 
-    def get_model(self, mparams: MutableHyperParams) -> GanModel:
+    def get_model(self, mparams: GanHyperParams) -> GanModel:
         return PokemonModel(self.params, mparams)
 
 

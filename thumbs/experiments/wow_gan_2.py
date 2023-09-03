@@ -13,7 +13,7 @@ from thumbs.diff_augmentation import DiffAugmentLayer
 from thumbs.experiment import Experiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_and_pokedexno, normalize_image, unnormalize_image, get_wow_icons_64
-from thumbs.params import HyperParams, MutableHyperParams, Sampler
+from thumbs.params import HyperParams, GanHyperParams, Sampler
 from thumbs.model.model import GanModel, BuiltModel
 
 from tensorflow_addons.layers import InstanceNormalization, SpectralNormalization
@@ -202,7 +202,7 @@ class MyExperiment(Experiment):
     def get_data(self) -> tf.data.Dataset:
         return self.data
 
-    def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
+    def get_train(self, model: BuiltModel, mparams: GanHyperParams) -> Train:
         # return TrainBCEPatch(model, self.params, mparams)
         # return TrainBCE(model, self.params, mparams)
         # return TrainHinge(model, self.params, mparams)
@@ -210,7 +210,7 @@ class MyExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 100000] = MutableHyperParams(
+        schedule[0, 100000] = GanHyperParams(
             gen_learning_rate=0.0001,
             dis_learning_rate=0.0002,
             batch_size=128,
@@ -241,7 +241,7 @@ I give up on pokemon. Nothing is any better than anything else I've tried. I thi
             sampler=Sampler.NORMAL,
         )
 
-    def get_model(self, mparams: MutableHyperParams) -> GanModel:
+    def get_model(self, mparams: GanHyperParams) -> GanModel:
         return MyModel(self.params, mparams)
 
 

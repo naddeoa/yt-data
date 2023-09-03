@@ -13,8 +13,8 @@ from thumbs.diff_augmentation import DiffAugmentLayer
 from thumbs.experiment import Experiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_data256, normalize_image, unnormalize_image
-from thumbs.params import HyperParams, MutableHyperParams, Sampler
-from thumbs.model.model import GanModel, BuiltModel
+from thumbs.params import HyperParams, GanHyperParams, Sampler
+from thumbs.model.model import GanModel, BuiltGANModel
 
 from tensorflow_addons.layers import InstanceNormalization, SpectralNormalization
 from tensorflow.keras.models import Model
@@ -107,7 +107,7 @@ class PokemonExperiment(Experiment):
     def get_data(self) -> np.ndarray:
         return self.data
 
-    def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
+    def get_train(self, model: BuiltGANModel, mparams: GanHyperParams) -> Train:
         # return TrainBCEPatch(model, self.params, mparams)
         # return TrainBCE(model, self.params, mparams)
         return TrainWassersteinGP(model, self.params, mparams)
@@ -115,7 +115,7 @@ class PokemonExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 1000000] = MutableHyperParams(
+        schedule[0, 1000000] = GanHyperParams(
             gen_learning_rate=0.0001,
             dis_learning_rate=0.0002,
             batch_size=8,
@@ -138,7 +138,7 @@ class PokemonExperiment(Experiment):
             sampler=Sampler.NORMAL
         )
 
-    def get_model(self, mparams: MutableHyperParams) -> GanModel:
+    def get_model(self, mparams: GanHyperParams) -> GanModel:
         return PokemonModel(self.params, mparams)
 
 

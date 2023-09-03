@@ -6,14 +6,15 @@ import os
 from rangedict import RangeDict
 import numpy as np
 from thumbs.train import Train, load_iterations
-from thumbs.model.model import GanModel, BuiltModel
+from thumbs.model.model import GanModel, BuiltGANModel, FrameworkModel
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Iterator, Union, Optional
+from typing import List, Tuple, Iterator, Union, Optional, TypeVar, Generic
 from scipy.ndimage import rotate
 from PIL import Image
 
+Params = TypeVar("Params", bound=MutableHyperParams)
 
-class Experiment(ABC):
+class Experiment(ABC, Generic[Params]):
     def __init__(self) -> None:
         self.params = self.get_params()
         self.zoom_factor = 0.95
@@ -22,7 +23,7 @@ class Experiment(ABC):
         self.augment_zooms = True
 
     @abstractmethod
-    def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
+    def get_train(self, model: BuiltGANModel, mparams: Params) -> Train:
         raise NotImplementedError()
 
     @abstractmethod
@@ -34,7 +35,7 @@ class Experiment(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_model(self, mparams: MutableHyperParams) -> GanModel:
+    def get_model(self, mparams: MutableHyperParams) -> FrameworkModel:
         raise NotImplementedError()
 
     @abstractmethod
@@ -135,7 +136,7 @@ params:
         while True:
             try:
                 print(f"Looking up hyper params for iteration {i+1}")
-                mparams: MutableHyperParams = schedule[i + 1]
+                mparams: Params = schedule[i + 1]
                 print(mparams)
             except KeyError:
                 print(f"Checkpointed at iteration {i} but only training for {mparams.iterations} iterations")

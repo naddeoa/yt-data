@@ -11,8 +11,8 @@ import numpy as np
 from thumbs.experiment import Experiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_data256, normalize_image, unnormalize_image
-from thumbs.params import HyperParams, MutableHyperParams
-from thumbs.model.model import GanModel, BuiltModel
+from thumbs.params import HyperParams, GanHyperParams
+from thumbs.model.model import GanModel, BuiltGANModel
 
 from tensorflow_addons.layers import InstanceNormalization
 from keras.models import Sequential
@@ -52,7 +52,7 @@ ndf = 128
 
 
 class PokemonSkipModel(GanModel):
-    def __init__(self, params: HyperParams, mparams: MutableHyperParams) -> None:
+    def __init__(self, params: HyperParams, mparams: GanHyperParams) -> None:
         super().__init__(params, mparams)
 
     def build_generator(self, z_dim):
@@ -166,7 +166,7 @@ class PokemonExperiment(Experiment):
         outlines = np.array([self.create_outline(image) for image in random_images])
         return np.asarray(outlines)
 
-    def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
+    def get_train(self, model: BuiltGANModel, mparams: GanHyperParams) -> Train:
         return TrainBCEPatch(model, self.params, mparams, self.get_random_labels)
 
     def custom_augmentation(
@@ -206,7 +206,7 @@ class PokemonExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 100000] = MutableHyperParams(
+        schedule[0, 100000] = GanHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
             batch_size=128,
@@ -232,7 +232,7 @@ class PokemonExperiment(Experiment):
             similarity_penalty=0,
         )
 
-    def get_model(self, mparams: MutableHyperParams) -> GanModel:
+    def get_model(self, mparams: GanHyperParams) -> GanModel:
         return PokemonSkipModel(self.params, mparams)
 
 

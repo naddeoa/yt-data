@@ -11,8 +11,8 @@ from thumbs.diff_augmentation import DiffAugmentLayer
 from thumbs.experiment import Experiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_and_types, normalize_image, unnormalize_image
-from thumbs.params import HyperParams, MutableHyperParams
-from thumbs.model.model import GanModel, BuiltModel
+from thumbs.params import HyperParams, GanHyperParams
+from thumbs.model.model import GanModel, BuiltGANModel
 
 from tensorflow_addons.layers import InstanceNormalization
 from keras.models import Sequential
@@ -100,7 +100,7 @@ class OutlineLayer(tf.keras.layers.Layer):
 
 
 class PokemonModel(GanModel):
-    def __init__(self, params: HyperParams, mparams: MutableHyperParams, vocab: List[str]) -> None:
+    def __init__(self, params: HyperParams, mparams: GanHyperParams, vocab: List[str]) -> None:
         super().__init__(params, mparams)
         # self.vocab = vocab
         self.num_classes = len(vocab) + 1  # 18 pokemon types plus an OOV token
@@ -210,12 +210,12 @@ class PokemonExperiment(Experiment):
         # get n random samples from self.labels
         return (self.labels[np.random.randint(0, len(self.labels), n)],)
 
-    def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
+    def get_train(self, model: BuiltGANModel, mparams: GanHyperParams) -> Train:
         return TrainWassersteinGP(model, self.params, mparams, self.get_random_labels)
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 100000] = MutableHyperParams(
+        schedule[0, 100000] = GanHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
             batch_size=128,
@@ -239,7 +239,7 @@ class PokemonExperiment(Experiment):
             similarity_penalty=20,
         )
 
-    def get_model(self, mparams: MutableHyperParams) -> GanModel:
+    def get_model(self, mparams: GanHyperParams) -> GanModel:
         return PokemonModel(self.params, mparams, self.vocab)
 
 

@@ -13,8 +13,8 @@ from thumbs.diff_augmentation import DiffAugmentLayer
 from thumbs.experiment import Experiment
 from thumbs.loss import Loss
 from thumbs.data import get_pokemon_and_pokedexno, normalize_image, unnormalize_image
-from thumbs.params import HyperParams, MutableHyperParams, Sampler
-from thumbs.model.model import GanModel, BuiltModel
+from thumbs.params import HyperParams, GanHyperParams, Sampler
+from thumbs.model.model import GanModel, BuiltGANModel
 
 from tensorflow_addons.layers import InstanceNormalization, SpectralNormalization
 from tensorflow.keras.models import Model
@@ -156,7 +156,7 @@ class SubtractOneLayer(Layer):
 
 
 class PokemonModel(GanModel):
-    def __init__(self, params: HyperParams, mparams: MutableHyperParams, highest_pokedex_no: int) -> None:
+    def __init__(self, params: HyperParams, mparams: GanHyperParams, highest_pokedex_no: int) -> None:
         super().__init__(params, mparams)
         self.highest_pokedex_no = highest_pokedex_no
         self.embedding_dim = 100
@@ -271,7 +271,7 @@ class PokemonExperiment(Experiment):
         all = np.concatenate([hardcoded_pokemon, random_pokemon])
         return (all,)
 
-    def get_train(self, model: BuiltModel, mparams: MutableHyperParams) -> Train:
+    def get_train(self, model: BuiltGANModel, mparams: GanHyperParams) -> Train:
         # return TrainBCEPatch(model, self.params, mparams)
         # return TrainBCE(model, self.params, mparams)
         # return TrainHinge(model, self.params, mparams)
@@ -279,7 +279,7 @@ class PokemonExperiment(Experiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 400] = MutableHyperParams(
+        schedule[0, 400] = GanHyperParams(
             gen_learning_rate=0.0002,
             dis_learning_rate=0.0002,
             batch_size=128,
@@ -291,7 +291,7 @@ class PokemonExperiment(Experiment):
             gradient_penalty_factor=10.0,
         )
 
-        schedule[401, 5600] = MutableHyperParams(
+        schedule[401, 5600] = GanHyperParams(
             gen_learning_rate=0.00002,
             dis_learning_rate=0.00002,
             batch_size=64,
@@ -303,7 +303,7 @@ class PokemonExperiment(Experiment):
             gradient_penalty_factor=10.0,
         )
 
-        schedule[5601, 100_000] = MutableHyperParams(
+        schedule[5601, 100_000] = GanHyperParams(
             gen_learning_rate=0.000004,
             dis_learning_rate=0.000004,
             batch_size=64,
@@ -325,7 +325,7 @@ class PokemonExperiment(Experiment):
             sampler=Sampler.NORMAL,
         )
 
-    def get_model(self, mparams: MutableHyperParams) -> GanModel:
+    def get_model(self, mparams: GanHyperParams) -> GanModel:
         print(f"Using {max(self.data[1])} as the embedding input size")
         return PokemonModel(self.params, mparams, max(self.data[1]))
 

@@ -1,8 +1,9 @@
 from dataclasses import dataclass
+import tensorflow as tf
 import yaml
 import os
 import numpy as np
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 from enum import Enum
 
 
@@ -29,7 +30,7 @@ class HyperParams:
     img_shape: Tuple[int, int, int]  # = (128, 128, 3)
     generator_clip_gradients_norm: Optional[float] = None  # = None
     base_dir: str = os.environ["EXP_DIR"] if "EXP_DIR" in os.environ else "/mnt/e/experiments"
-    sampler: Sampler = Sampler.NORMAL
+    sampler: Sampler = Sampler.NORMAL  # TODO move this to GanParams
 
     similarity_threshold: float = 0  # = 0.0
     similarity_penalty: float = 10  # = 10.0
@@ -95,6 +96,10 @@ class HyperParams:
         return f"{self.base_dir}/{self.name}/generator.jpg"
 
     @property
+    def model_diagram_path(self):
+        return f"{self.base_dir}/{self.name}/model.jpg"
+
+    @property
     def dis_diagram_path(self):
         return f"{self.base_dir}/{self.name}/discriminator.jpg"
 
@@ -110,33 +115,61 @@ class MutableHyperParams:
     iterations: int  # = 200_000
     batch_size: int  # = 128
     sample_interval: int  # = 100
-    gen_learning_rate: float  # = 0.0001
-    dis_learning_rate: float  # = 0.00001
     adam_b1: float  # = 0.5
+    learning_rate: float = -1
+    checkpoint_interval: int = -1
+    clipnorm: Optional[float] = None
+    weight_decay: float = 0.004
+    adam_b2: float = 0.999  # = 0.5
+    notes: Optional[str] = None
+    l1_loss_factor: Optional[float] = None
+    l2_loss_factor: Optional[float] = None
+
+    def get_yaml(self) -> str:
+        return str(yaml.dump(self.__dict__, indent=4))
+
+    def __post_init__(self):
+        if self.checkpoint_interval == -1:
+            self.checkpoint_interval = self.sample_interval * 10
+
+
+@dataclass
+class DiffusionHyperParams(MutableHyperParams):
+    T: int = 300
+    beta: float = 0.2  # beta value at the last timestep
+    beta_schedule: tf.Tensor = tf.constant(-1)
+
+    def __post_init__(self):
+        if self.beta_schedule == -1:
+            beta_schedule = np.linspace(0, self.beta, self.T)
+            self.beta_schedule = tf.convert_to_tensor(beta_schedule, dtype=tf.float32)
+
+
+@dataclass
+class GanHyperParams(MutableHyperParams):
+    gen_learning_rate: float = 0.0001
+    dis_learning_rate: float = 0.0002
+
     generator_turns: int = 1
     discriminator_turns: int = 1
-    checkpoint_interval: int = -1
+
+    g_clipnorm: Optional[float] = None  # For gans
+    d_clipnorm: Optional[float] = None  # For gans
+
+    dis_weight_decay: float = 0.004  # For gans
+    gen_weight_decay: float = 0.004  # For gans
+
+    generator_turns_mode: TurnMode = TurnMode.SAME_SAMPLES
+    discriminator_turns_mode: TurnMode = TurnMode.SAME_SAMPLES
+
     discriminator_training: bool = True
     generator_training: bool = True
     gradient_penalty_factor: float = 10
-    l1_loss_factor: Optional[float] = None
-    l2_loss_factor: Optional[float] = None
     discriminator_ones_zeroes_shape: tuple = ()
-    g_clipnorm: Optional[float] = None
-    d_clipnorm: Optional[float] = None
-    dis_weight_decay: float = 0.004
-    gen_weight_decay: float = 0.004
-    adam_b2: float = 0.999  # = 0.5
-    discriminator_turns_mode: TurnMode = TurnMode.SAME_SAMPLES
-    generator_turns_mode: TurnMode = TurnMode.SAME_SAMPLES
-    notes: Optional[str] = None
+
+
+    learning_rate: float = -1  # Not used
 
     def __post_init__(self):
         if self.discriminator_ones_zeroes_shape == ():
             self.discriminator_ones_zeroes_shape = (self.batch_size, 1)
-
-        if self.checkpoint_interval == -1:
-            self.checkpoint_interval = self.sample_interval * 10
-
-    def get_yaml(self) -> str:
-        return str(yaml.dump(self.__dict__, indent=4))

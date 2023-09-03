@@ -1,12 +1,13 @@
 import tensorflow as tf
 import json
 import numpy as np
-from thumbs.model.model import BuiltModel
+from thumbs.model.model import BuiltGANModel, BuiltDiffusionModel
+from tensorflow.keras.losses import MeanSquaredError  
 from thumbs.util import is_colab
 from thumbs.viz import show_loss_plot, visualize_thumbnails
-from thumbs.params import HyperParams, MutableHyperParams, TurnMode
+from thumbs.params import HyperParams, GanHyperParams, TurnMode, MutableHyperParams, DiffusionHyperParams
 from thumbs.loss import Loss
-from typing import List, Optional, Tuple, Any, Optional, Callable, Dict, Union
+from typing import List, Optional, Tuple, Any, Optional, Callable, Dict, Union, TypeVar, Generic
 from abc import ABC, abstractmethod
 import pathlib
 import os
@@ -122,7 +123,11 @@ class DefaultInputMapper(InputMapper):
         return (generated_imgs,) + data_batch[1:]
 
 
-class Train(ABC):
+MParams = TypeVar("MParams", bound=MutableHyperParams)
+BuiltModel = TypeVar("BuiltModel", bound=Union[BuiltGANModel, BuiltDiffusionModel])
+
+
+class Train(ABC, Generic[MParams, BuiltModel]):
     # label_getter is a function that takes a number and returns an array of np.ndarray
     losses: Dict[str, List[float]]
 
@@ -130,16 +135,13 @@ class Train(ABC):
         self,
         built_model: BuiltModel,
         params: HyperParams,
-        mparams: MutableHyperParams,
+        mparams: MParams,
         label_getter: LabelGetter = None,
         input_mapper: InputMapper = DefaultInputMapper(),
     ) -> None:
         self.mparams = mparams
-        self.generator = built_model.generator
+        self.built_model = built_model
         self.label_getter = label_getter
-        self.discriminator = built_model.discriminator
-        self.discriminator_optimizer = built_model.discriminator_optimizer
-        self.generator_optimizer = built_model.generator_optimizer
         self.input_mapper = input_mapper
         self.params = params
         self.loss = Loss(params)
@@ -186,6 +188,18 @@ class Train(ABC):
         raise NotImplementedError()
 
     @abstractmethod
+    def save_weights_checkpoint(self, checkpoint_path: str, iteration: int):
+        raise NotImplementedError()
+
+    @abstractmethod
+    def save_weights(self):
+        raise NotImplementedError()
+
+    @abstractmethod
+    def load_weights(self):
+        raise NotImplementedError()
+
+    @abstractmethod
     def train_body(self, data: tuple, dataset: tf.data.Dataset) -> Dict[str, Union[float, tf.Tensor]]:
         """
         Returns a dict of loss and loss components. For a gan, copmponents might
@@ -193,18 +207,8 @@ class Train(ABC):
         """
         raise NotImplementedError()
 
-    def apply_discriminator_gradients(self, gradient) -> None:
-        if self.mparams.discriminator_training:
-            self.discriminator_optimizer.apply_gradients(zip(gradient, self.discriminator.trainable_variables))
-
-    def apply_generator_gradients(self, gradient) -> None:
-        if self.mparams.generator_training:
-            self.generator_optimizer.apply_gradients(zip(gradient, self.generator.trainable_variables))
-
     def train(self, dataset: tf.data.Dataset, start_iter=0):
-        load_weights(self.generator, self.params.gen_weight_path)
-        load_weights(self.discriminator, self.params.dis_weight_path)
-
+        self.load_weights()
         loss: Dict[str, List[float]] = {}
 
         progress = tqdm(
@@ -250,8 +254,7 @@ class Train(ABC):
 
         if checkpoint_path is not None and checkpoint_interval is not None and (iteration) % checkpoint_interval == 0:
             save_iterations(f"{checkpoint_path}/{iteration}/iteration", iteration)
-            self.generator.save_weights(f"{checkpoint_path}/{iteration}/weights_gen")
-            self.discriminator.save_weights(f"{checkpoint_path}/{iteration}/weights_dis")
+            self.save_weights_checkpoint(checkpoint_path, iteration)
 
             loss_file_name = self.params.loss_path.split("/")[-1]
             save_as_json(self.losses, f"{checkpoint_path}/{iteration}/{loss_file_name}")
@@ -260,8 +263,7 @@ class Train(ABC):
 
         if (iteration) % sample_interval == 0:
             # Save losses and accuracies so they can be plotted after training
-            self.generator.save_weights(self.params.gen_weight_path)
-            self.discriminator.save_weights(self.params.dis_weight_path)
+            self.save_weights()
             save_iterations(self.params.iteration_path, iteration)
 
             self.iteration_checkpoints.append(iteration)
@@ -297,19 +299,99 @@ class Train(ABC):
         else:
             return False
 
+    @abstractmethod
+    def show_samples(self, file_name=None, rows=6, cols=6):
+        raise NotImplementedError()
+
+
+class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
+
+    def load_weights(self):
+        pass # TODO
+
+    def save_weights(self):
+        pass # TODO
+
+    def save_weights_checkpoint(self, checkpoint_path: str, iteration: int):
+        pass # TODO
+
+    def forward_diffusion_sample(self, x_0, t, device='/cpu:0') -> Tuple[tf.Tensor, tf.Tensor]:
+        """
+        x_0: Initial images, shape (batch_size, height, width, channels)
+        t: timestep
+        beta_schedule: A list or tensor of noise levels, beta, at each timestep
+        device: 'CPU:0' or 'GPU:0' etc.
+        """
+        with tf.device(device):
+            # x = tf.cast(x_0, tf.float32) # TODO Maybe don't need?
+            x = x_0
+            
+            final_noise = tf.zeros_like(x_0, dtype=tf.float32)
+            # Loop through the timesteps up to t
+            for i in range(t):
+                beta = self.mparams.beta_schedule[i]  # Get beta for this timestep
+                noise = tf.random.normal(shape=x.shape, mean=0., stddev=1.)  # Generate random noise
+                noise_scaled = tf.math.sqrt(beta) * noise  # Scale the noise
+                final_noise += noise_scaled
+                x = x * (1 - beta) + noise_scaled  # Add the noise to x
+
+        return x, final_noise
+
+    # TODO next up, make usre I can get samples for training
+    def train_body(self, data: tuple, dataset: tf.data.Dataset) -> Dict[str, Union[float, tf.Tensor]]:
+        t = tf.constant([[np.random.randint(0, self.mparams.T-1)]] * self.mparams.batch_size, dtype=tf.int32)
+
+        with tf.GradientTape() as tape:
+
+            # Generate noisy image and real noise for this timestep
+            # Assuming you have a function forward_diffusion_sample to do this
+            noisy_item, real_noise = self.forward_diffusion_sample(data, t)
+
+            # Forward pass: Get model's prediction of the noise added at this timestep
+            predicted_noise = self.built_model.model([noisy_item, t], training=True)
+
+            # Compute loss between the real noise and the predicted noise
+            loss = MeanSquaredError()(real_noise, predicted_noise)
+
+        # Backprop and update weights
+        grads = tape.gradient(loss, self.built_model.model.trainable_variables)
+        self.built_model.optimizer.apply_gradients(zip(grads, self.built_model.model.trainable_variables))
+
+        return {}
+
+
+class TrainGAN(Train[GanHyperParams, BuiltGANModel]):
+    def save_weights(self):
+        self.built_model.generator.save_weights(self.params.gen_weight_path)
+        self.built_model.discriminator.save_weights(self.params.dis_weight_path)
+
+    def save_weights_checkpoint(self, checkpoint_path: str, iteration: int):
+        self.built_model.generator.save_weights(f"{checkpoint_path}/{iteration}/weights_gen")
+        self.built_model.discriminator.save_weights(f"{checkpoint_path}/{iteration}/weights_dis")
+
+    def load_weights(self):
+        load_weights(self.built_model.generator, self.params.gen_weight_path)
+        load_weights(self.built_model.discriminator, self.params.dis_weight_path)
+
+    def apply_discriminator_gradients(self, gradient) -> None:
+        if self.mparams.discriminator_training:
+            self.built_model.discriminator_optimizer.apply_gradients(zip(gradient, self.built_model.discriminator.trainable_variables))
+
+    def apply_generator_gradients(self, gradient) -> None:
+        if self.mparams.generator_training:
+            self.built_model.generator_optimizer.apply_gradients(zip(gradient, self.built_model.generator.trainable_variables))
+
     def show_samples(self, file_name=None, rows=6, cols=6):
         noise = self.params.latent_sample(rows * cols)
         if self.label_getter is not None:
             labels = self.label_getter(rows * cols)
-            generated_thumbnails = self.generator.predict((noise, *labels), verbose=0)
+            generated_thumbnails = self.built_model.generator.predict((noise, *labels), verbose=0)
         else:
-            generated_thumbnails = self.generator.predict(noise, verbose=0)
+            generated_thumbnails = self.built_model.generator.predict(noise, verbose=0)
 
         dir = self.params.prediction_path
         visualize_thumbnails(generated_thumbnails, rows, cols, dir, file_name)
 
-
-class TrainGAN(Train):
     @abstractmethod
     def train_discriminator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         raise NotImplementedError()
@@ -354,7 +436,7 @@ class TrainGAN(Train):
         return {
             "d_loss": float(d_loss),
             "g_loss": float(g_loss),
-            **d_other_float ,
+            **d_other_float,
             **g_other_float,
         }
 
@@ -381,7 +463,7 @@ class TrainWassersteinGP(TrainGAN):
             gp_tape.watch(interpolated)
             # 1. Get the discriminator output for this interpolated image.
             disc_input = self.input_mapper.get_discriminator_input_fake(data, interpolated)
-            pred = self.discriminator(disc_input, training=True)
+            pred = self.built_model.discriminator(disc_input, training=True)
 
         # 2. Calculate the gradients w.r.t to this interpolated image.
         grads = gp_tape.gradient(pred, [interpolated])[0]
@@ -400,11 +482,11 @@ class TrainWassersteinGP(TrainGAN):
         generator_input = self.input_mapper.get_generator_input(data, z)
         real_input = self.input_mapper.get_discriminator_input_real(data)
         with tf.GradientTape() as tape:
-            gen_imgs = self.generator(generator_input, training=True)
+            gen_imgs = self.built_model.generator(generator_input, training=True)
             fake_input = self.input_mapper.get_discriminator_input_fake(data, gen_imgs)
             # Get the logits for the fake images
-            real_logits = self.discriminator(real_input, training=True)
-            fake_logits = self.discriminator(fake_input, training=True)
+            real_logits = self.built_model.discriminator(real_input, training=True)
+            fake_logits = self.built_model.discriminator(fake_input, training=True)
 
             # Calculate the discriminator loss using the fake and real image logits
             d_cost, other = self.discriminator_loss(real_img=real_logits, fake_img=fake_logits)
@@ -417,7 +499,7 @@ class TrainWassersteinGP(TrainGAN):
             d_loss = d_cost + gp
 
         # Get the gradients w.r.t the discriminator loss
-        d_gradient = tape.gradient(d_loss, self.discriminator.trainable_variables)
+        d_gradient = tape.gradient(d_loss, self.built_model.discriminator.trainable_variables)
         # Update the weights of the discriminator using the discriminator optimizer
         self.apply_discriminator_gradients(d_gradient)
         return d_loss, other
@@ -443,16 +525,16 @@ class TrainWassersteinGP(TrainGAN):
         with tf.GradientTape() as tape:
             # Generate fake images using the generator
             generator_input = self.input_mapper.get_generator_input(data, z)
-            generated_images = self.generator(generator_input, training=True)
+            generated_images = self.built_model.generator(generator_input, training=True)
             # Get the discriminator logits for fake images
             discrim_input = self.input_mapper.get_discriminator_input_fake(data, generated_images)
-            disc_output = self.discriminator(discrim_input, training=True)
+            disc_output = self.built_model.discriminator(discrim_input, training=True)
             # Calculate the generator loss
             real_images = self.input_mapper.get_real_images(data)
             g_loss, other = self.generator_loss(disc_output, generated_images, real_images)
 
         # Get the gradients w.r.t the generator loss
-        gen_gradient = tape.gradient(g_loss, self.generator.trainable_variables)
+        gen_gradient = tape.gradient(g_loss, self.built_model.generator.trainable_variables)
 
         # Update the weights of the generator using the generator optimizer
         self.apply_generator_gradients(gen_gradient)
@@ -470,19 +552,19 @@ class TrainBCE(TrainGAN):
         fake = np.zeros((self.mparams.discriminator_ones_zeroes_shape))
 
         with tf.GradientTape() as tape:
-            gen_imgs = self.generator(generator_input, training=True)
+            gen_imgs = self.built_model.generator(generator_input, training=True)
             real_input = self.input_mapper.get_discriminator_input_real(data)
-            real_output = self.discriminator(real_input, training=True)
+            real_output = self.built_model.discriminator(real_input, training=True)
             d_loss_real = tf.keras.losses.BinaryCrossentropy()(real, real_output)
 
             fake_input = self.input_mapper.get_discriminator_input_fake(data, gen_imgs)
-            fake_output = self.discriminator(fake_input, training=True)
+            fake_output = self.built_model.discriminator(fake_input, training=True)
             d_loss_fake = tf.keras.losses.BinaryCrossentropy()(fake, fake_output)
 
         d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
 
         # Get the gradients
-        grads = tape.gradient(d_loss, self.discriminator.trainable_weights)
+        grads = tape.gradient(d_loss, self.built_model.discriminator.trainable_weights)
 
         # Apply the gradients
         self.apply_discriminator_gradients(grads)
@@ -524,11 +606,11 @@ class TrainBCE(TrainGAN):
         """
         with tf.GradientTape() as tape:
             generator_input = self.input_mapper.get_generator_input(data, z)
-            generated_images = self.generator(generator_input, training=True)
+            generated_images = self.built_model.generator(generator_input, training=True)
 
             # Get the discriminator's predictions on the fake images
             fake_input = self.input_mapper.get_discriminator_input_fake(data, generated_images)
-            fake_preds = self.discriminator(fake_input, training=True)
+            fake_preds = self.built_model.discriminator(fake_input, training=True)
 
             # Calculate the loss using the generator's output (generated_images)
             # and the discriminator's predictions (fake_preds)
@@ -536,7 +618,7 @@ class TrainBCE(TrainGAN):
             loss, other = self.generator_loss(fake_preds, generated_images, real_images)
 
         # Calculate the gradients of the loss with respect to the generator's weights
-        grads = tape.gradient(loss, self.generator.trainable_weights)
+        grads = tape.gradient(loss, self.built_model.generator.trainable_weights)
 
         # Update the weights of the generator
         self.apply_generator_gradients(grads)
@@ -548,19 +630,19 @@ class TrainHinge(TrainGAN):
     def train_discriminator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         generator_input = self.input_mapper.get_generator_input(data, z)
         with tf.GradientTape() as disc_tape:
-            gen_imgs = self.generator(generator_input, training=True)
+            gen_imgs = self.built_model.generator(generator_input, training=True)
             real_input = self.input_mapper.get_discriminator_input_real(data)
-            real_output = self.discriminator(real_input, training=True)
+            real_output = self.built_model.discriminator(real_input, training=True)
 
             fake_input = self.input_mapper.get_discriminator_input_fake(data, gen_imgs)
-            fake_output = self.discriminator(fake_input, training=True)
+            fake_output = self.built_model.discriminator(fake_input, training=True)
 
             d_real_loss = tf.reduce_mean(tf.nn.relu(1.0 - real_output))
             d_fake_loss = tf.reduce_mean(tf.nn.relu(1.0 + fake_output))
             d_loss = d_real_loss + d_fake_loss
 
         # Calculate the gradients
-        gradients_of_discriminator = disc_tape.gradient(d_loss, self.discriminator.trainable_variables)
+        gradients_of_discriminator = disc_tape.gradient(d_loss, self.built_model.discriminator.trainable_variables)
 
         # Apply the gradients
         self.apply_discriminator_gradients(gradients_of_discriminator)
@@ -595,11 +677,11 @@ class TrainHinge(TrainGAN):
         """
         with tf.GradientTape() as tape:
             generator_input = self.input_mapper.get_generator_input(data, z)
-            generated_images = self.generator(generator_input, training=True)
+            generated_images = self.built_model.generator(generator_input, training=True)
 
             # Get the discriminator's predictions on the fake images
             fake_input = self.input_mapper.get_discriminator_input_fake(data, generated_images)
-            fake_preds = self.discriminator(fake_input, training=True)
+            fake_preds = self.built_model.discriminator(fake_input, training=True)
 
             # Calculate the loss using the generator's output (generated_images)
             # and the discriminator's predictions (fake_preds)
@@ -607,7 +689,7 @@ class TrainHinge(TrainGAN):
             loss, other = self.generator_loss(fake_preds, generated_images, real_images)
 
         # Calculate the gradients of the loss with respect to the generator's weights
-        grads = tape.gradient(loss, self.generator.trainable_weights)
+        grads = tape.gradient(loss, self.built_model.generator.trainable_weights)
 
         # Update the weights of the generator
         self.apply_generator_gradients(grads)
@@ -626,18 +708,18 @@ class TrainBCEPatch(TrainGAN):
         fake = np.zeros((self.mparams.discriminator_ones_zeroes_shape))
 
         with tf.GradientTape() as disc_tape:
-            gen_imgs = self.generator(generator_input, training=True)
+            gen_imgs = self.built_model.generator(generator_input, training=True)
             real_input = self.input_mapper.get_discriminator_input_real(data)
-            real_output = self.discriminator(real_input, training=True)
+            real_output = self.built_model.discriminator(real_input, training=True)
             d_loss_real = tf.reduce_mean(tf.keras.losses.binary_crossentropy(real, real_output, from_logits=True))
 
             fake_input = self.input_mapper.get_discriminator_input_fake(data, gen_imgs)
-            fake_output = self.discriminator(fake_input, training=True)
+            fake_output = self.built_model.discriminator(fake_input, training=True)
             d_loss_fake = tf.reduce_mean(tf.keras.losses.binary_crossentropy(fake, fake_output, from_logits=True))
 
             d_loss = 0.5 * (d_loss_real + d_loss_fake)
 
-        gradients_of_discriminator = disc_tape.gradient(d_loss, self.discriminator.trainable_variables)
+        gradients_of_discriminator = disc_tape.gradient(d_loss, self.built_model.discriminator.trainable_variables)
         self.apply_discriminator_gradients(gradients_of_discriminator)
 
         d_real_acc = tf.reduce_mean(tf.cast(tf.math.greater_equal(real_output, 0.0), tf.float32))
@@ -677,11 +759,11 @@ class TrainBCEPatch(TrainGAN):
         with tf.GradientTape() as tape:
             # Generate fake images using the generator
             generator_input = self.input_mapper.get_generator_input(data, z)
-            generated_images = self.generator(generator_input, training=True)
+            generated_images = self.built_model.generator(generator_input, training=True)
 
             # Get the discriminator's predictions on the fake images
             fake_input = self.input_mapper.get_discriminator_input_fake(data, generated_images)
-            fake_preds = self.discriminator(fake_input, training=True)
+            fake_preds = self.built_model.discriminator(fake_input, training=True)
 
             # Calculate the loss using the generator's output (generated_images)
             # and the discriminator's predictions (fake_preds)
@@ -689,7 +771,7 @@ class TrainBCEPatch(TrainGAN):
             loss, other = self.generator_loss(fake_preds, generated_images, real_images)
 
         # Calculate the gradients of the loss with respect to the generator's weights
-        grads = tape.gradient(loss, self.generator.trainable_weights)
+        grads = tape.gradient(loss, self.built_model.generator.trainable_weights)
 
         # Update the weights of the generator
         self.apply_generator_gradients(grads)
