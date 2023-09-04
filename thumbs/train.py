@@ -337,7 +337,15 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
         random_img = random_batch[:n_imgs]
 
         # Noise up the img, all the way to T
-        t = tf.constant(self.mparams.T - 1, dtype=tf.int32, shape=(n_imgs, 1, 1, 1))
+        # t = tf.constant(self.mparams.T - 1, dtype=tf.int32, shape=(n_imgs, 1, 1, 1))
+
+        t = tf.constant([
+            [np.random.randint(0, self.mparams.T - 1)],
+            [np.random.randint(0, self.mparams.T - 1)],
+            [np.random.randint(0, self.mparams.T - 1)],
+            [np.random.randint(0, self.mparams.T - 1)]
+            ], dtype=tf.int32)
+
         noisy, real_noise = self.forward_diffusion_sample(random_img, t)
         # Predict the noise
         predicted_noise = self.built_model.model([noisy, t], training=False)
@@ -346,14 +354,18 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
         # Print all the shapes
 
         imgs_per_row = 4
-        labels = [
-            "Reconstructed",
-            "Predicted Noise",
-            "Noisy",
-            "Original",
-        ] * imgs_per_row 
 
-        images = [random_img - predicted_noise, predicted_noise, noisy, random_img]
+        labels = []
+        for i in range (n_imgs):
+            labels += [
+                "Reconstructed",
+                "Predicted Noise",
+                f"Noisy (t={t[i].numpy()[0]})",
+                "Original",
+            ]
+
+        denoised_img = self.reverse_diffusion_sample(noisy, predicted_noise, t)
+        images = [denoised_img, predicted_noise, noisy, random_img]
         images = [img.numpy() for img in images]
         images = [img for sublist in zip(*images) for img in sublist]
         visualize_thumbnails(images, rows=n_imgs, cols=imgs_per_row, dir=dir, file_name=file_name, label_list=labels)
@@ -390,6 +402,19 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
 
         return x_noisy, noise
 
+    def reverse_diffusion_sample(self, x_noisy, noise, t):
+        # Recompute the scaling terms for this timestep
+        sqrt_alpha_t = tf.gather(self.sqrt_alphas_cumprod, t)
+        sqrt_one_minus_alpha_t = tf.gather(self.sqrt_one_minus_alphas_cumprod, t)
+        
+        sqrt_alpha_t = tf.reshape(sqrt_alpha_t, [-1, 1, 1, 1])
+        sqrt_one_minus_alpha_t = tf.reshape(sqrt_one_minus_alpha_t, [-1, 1, 1, 1])
+        
+        # Reverse the noising operation to get back to the original x
+        x_original = (x_noisy - sqrt_one_minus_alpha_t * noise) / sqrt_alpha_t
+        return x_original
+
+
     # def forward_diffusion_sample_loop(self, x_0, t, device="/cpu:0") -> Tuple[tf.Tensor, tf.Tensor]:
     #     """
     #     Keeping this around because its esier to understand than the vectorized version
@@ -418,7 +443,7 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
         with tf.GradientTape() as tape:
             # Generate noisy image and real noise for this timestep
             # Assuming you have a function forward_diffusion_sample to do this
-            noisy_item, real_noise = self.forward_diffusion_sample(data, t)
+            noisy_item, real_noise = self.forward_diffusion_sample(data, t, device='/gpu:0')
 
             # Forward pass: Get model's prediction of the noise added at this timestep
             predicted_noise = self.built_model.model([noisy_item, t], training=True)

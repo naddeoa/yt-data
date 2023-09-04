@@ -52,11 +52,11 @@ kern_size = 3
 
 ngf = 64
 gen_highest_f = 8
-gen_blocks = [2, 2, 2]
+up_blocks = [2, 2, 2]
 
 ndf = 64
 disc_highest_f = 8
-disc_blocks = [2, 2, 2]
+down_blocks = [2, 2, 2]
 
 
 class MyModel(DiffusionModel):
@@ -64,64 +64,147 @@ class MyModel(DiffusionModel):
         super().__init__(params, mparams)
         self.embed_dim = 30
 
-    def concat_embedding(self, x, embedding):
+    def down_resnet(
+        self,
+        f: int,
+        x,
+        strides: int,
+        kernel_size: int = kern_size,
+        normalize=True,
+    ):
+        input_x = x
+        seq = Sequential()
+        seq.add(
+            # SpectralNormalization(
+            Conv2D(
+                f * ndf,
+                kernel_size=kernel_size,
+                strides=strides,
+                padding="same",
+            )
+            # )
+        )
+
+        if normalize:
+            seq.add(InstanceNormalization())
+        seq.add(LeakyReLU(alpha=0.2))
+
+        if strides == 1:
+            seq.add(
+                # SpectralNormalization(
+                Conv2D(
+                    f * ndf,
+                    kernel_size=kernel_size,
+                    strides=1,
+                    padding="same",
+                )
+                # )
+            )
+            seq.add(InstanceNormalization())
+
+        x = seq(x)
+        if input_x.shape == x.shape:
+            x = Add()([x, input_x])
+            x = LeakyReLU(alpha=0.2)(x)
+        return x
+
+    def up_resnet(
+        self,
+        f: int,
+        x,
+        strides: int,
+        kernel_size: int,
+    ):
+        input_x = x
+
+        seq = Sequential()
+        seq.add(
+            Conv2DTranspose(
+                f * ngf,
+                kernel_size=kernel_size,
+                strides=strides,
+                padding="valid" if kernel_size > kern_size else "same",
+                use_bias=False,
+            )
+        )
+        seq.add(InstanceNormalization())
+        seq.add(LeakyReLU(alpha=0.2))
+
+        if strides == 1 and kernel_size == kern_size:
+            seq.add(
+                Conv2DTranspose(
+                    f * ngf,
+                    kernel_size=kernel_size,
+                    strides=1,
+                    padding="same",
+                    use_bias=False,
+                )
+            )
+            seq.add(InstanceNormalization())
+
+        x = seq(x)
+        if input_x.shape == x.shape:
+            x = Add()([x, input_x])
+            x = LeakyReLU(alpha=0.2)(x)
+        return x
+
+    def concat_embedding(self, x, embedding, name: str):
         _, H, W, C = x.shape
-        _x = Dense(H * W, use_bias=False)(embedding)
-        _x = Reshape((H, W, 1))(_x)
-        return Concatenate()([x, _x])
+
+        s = Sequential([Dense(H * W, use_bias=False), Reshape((H, W, 1))], name=name)
+        _x = s(embedding)
+        return Concatenate(name=name)([x, _x])
 
     def get_model(self) -> Model:
         img_input = Input(shape=self.params.img_shape, name="image")
+
         t_input = Input(shape=(1,), name="t")
         e_embedding = Embedding(self.mparams.T, self.embed_dim, name="e_embedding")(t_input)
 
-        x = Conv2D(64, kernel_size=3, strides=2, padding="same", use_bias=False)(img_input)
-        x = LeakyReLU(alpha=0.2)(x)
-        x = self.concat_embedding(x, e_embedding)
-        down1 = x  # 32x32x(64 + 1)
+        x = img_input
 
-        x = Conv2D(128, kernel_size=3, strides=2, padding="same", use_bias=False)(x)
-        x = InstanceNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
-        x = self.concat_embedding(x, e_embedding)
-        down2 = x  # 16x16x(128 + 1)
+        seed = Sequential(
+            [
+                Conv2D(3, kernel_size=3, strides=1, padding="same", use_bias=False),
+                InstanceNormalization(),
+                LeakyReLU(alpha=0.2),
+            ],
+            name="seed",
+        )
+        x = seed(x)
 
-        x = Conv2D(256, kernel_size=3, strides=2, padding="same", use_bias=False)(x)
-        x = InstanceNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
-        x = self.concat_embedding(x, e_embedding)
-        down3 = x  # 8x8x(256 + 1)
+        downs = []
+        for i, f in enumerate(np.linspace(1, disc_highest_f, len(down_blocks), dtype=int)):
+            x = self.down_resnet(f, x, strides=2, normalize=False)
+            for _ in range(down_blocks[i]):
+                x = self.down_resnet(f, x, strides=1)
 
-        x = Conv2DTranspose(256, kernel_size=3, strides=2, padding="same", use_bias=False)(x)
-        x = InstanceNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
-        x = Concatenate()([x, down2])  # 16x16x512
-        x = self.concat_embedding(x, e_embedding)  # 16x16x(512 + 1)
+            x = self.concat_embedding(x, e_embedding, name=f"embed_concat_down{i}")
+            downs.append(x)
 
-        x = Conv2DTranspose(128, kernel_size=3, strides=2, padding="same", use_bias=False)(x)
-        x = InstanceNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
-        x = Concatenate()([x, down1])  # 32x32x256
-        x = self.concat_embedding(x, e_embedding)  # 32x32x(256 + 1)
+        downs.reverse()
+        for i, f in enumerate(np.linspace(gen_highest_f, 1, len(up_blocks), dtype=int)):
+            x = Concatenate(name=f"resnet_concat_{i}")([x, downs[i]])
+            x = self.up_resnet(f, x, strides=2, kernel_size=kern_size)
+            for _ in range(up_blocks[i]):
+                x = self.up_resnet(f, x, strides=1, kernel_size=kern_size)
 
-        x = Conv2DTranspose(64, kernel_size=3, strides=2, padding="same", use_bias=False)(x)
-        x = InstanceNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
-        x = self.concat_embedding(x, e_embedding)  # 64x64x(128 + 1)
+            x = self.concat_embedding(x, e_embedding, name=f"embed_concat_up{i}")
 
-        output = Conv2DTranspose(3, kernel_size=3, strides=1, padding="same", use_bias=False, activation="tanh")(x)
+        output = Conv2D(3, kernel_size=3, strides=1, padding="same", use_bias=False, activation="tanh")(x)
         return Model([img_input, t_input], output, name="diffusion_model")
 
 
 class MyExperiment(DiffusionExperiment):
     def __init__(self) -> None:
         super().__init__()
-        self.data = get_pokemon_data256((64,64,3))
+        # self.data = get_pokemon_data256((64,64,3))
+        self.data = get_wow_icons_64()
 
     def augment_data(self) -> bool:
         return False
 
-    def get_data(self) -> np.ndarray:
+    def get_data(self) -> Union[np.ndarray, tf.data.Dataset]:
         return self.data
 
     def get_train(self, model: BuiltDiffusionModel, mparams: DiffusionHyperParams) -> Train:
@@ -129,19 +212,14 @@ class MyExperiment(DiffusionExperiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 10000] = DiffusionHyperParams(
+        schedule[0, 1720] = DiffusionHyperParams(
             learning_rate=0.0002,
             batch_size=128,
             adam_b1=0.5,
-            iterations=10000,
-            sample_interval=20,
-
-            T=300,
-            beta=0.008,
-
-            notes="""
-First take at diffusion. Lets see.
-""",
+            iterations=1720,
+            sample_interval=1,
+            T=1000,
+            beta=0.002,
         )
 
         return schedule
