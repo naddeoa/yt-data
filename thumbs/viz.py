@@ -183,7 +183,7 @@ def visualize_preprocessed_image(image, size=None):
     plt.close()
 
 
-def visualize_thumbnails(image_list, rows, cols, dir=None, file_name=None):
+def visualize_thumbnails(image_list, rows, cols, dir=None, file_name=None, label_list: Optional[List[str]]=None):
     plt.cla()
     plt.clf()
     # Create a grid of subplots to display the images
@@ -194,12 +194,19 @@ def visualize_thumbnails(image_list, rows, cols, dir=None, file_name=None):
     for row in range(rows):
         for col in range(cols):
             image = unnormalize_image(image_list.pop())
+            if label_list:
+                label = label_list.pop()
+
             if rows == 1:
                 axs[col].imshow(image)
                 axs[col].axis("off")
+                if label_list is not None:
+                    axs[col].set_title(label)
             else:
                 axs[row, col].imshow(image)
                 axs[row, col].axis("off")
+                if label_list is not None:
+                    axs[row, col].set_title(label)
 
     plt.subplots_adjust(wspace=0.0, hspace=0)
     plt.tight_layout()

@@ -2,7 +2,7 @@ import tensorflow as tf
 import json
 import numpy as np
 from thumbs.model.model import BuiltGANModel, BuiltDiffusionModel
-from tensorflow.keras.losses import MeanSquaredError  
+from tensorflow.keras.losses import MeanSquaredError
 from thumbs.util import is_colab
 from thumbs.viz import show_loss_plot, visualize_thumbnails
 from thumbs.params import HyperParams, GanHyperParams, TurnMode, MutableHyperParams, DiffusionHyperParams
@@ -233,6 +233,7 @@ class Train(ABC, Generic[MParams, BuiltModel]):
             updated = self.save_sample(
                 iteration=iteration,
                 loss=loss,
+                dataset=dataset,
             )
 
             if is_colab():
@@ -247,6 +248,7 @@ class Train(ABC, Generic[MParams, BuiltModel]):
         self,
         iteration: int,
         loss: Dict[str, List[float]],
+        dataset: tf.data.Dataset,
     ) -> bool:
         sample_interval = self.mparams.sample_interval
         checkpoint_path = self.params.checkpoint_path
@@ -280,7 +282,7 @@ class Train(ABC, Generic[MParams, BuiltModel]):
             save_as_json(self.iteration_checkpoints, self.params.iteration_checkpoints_path)
 
             file_name = str(iteration)
-            self.show_samples(file_name=file_name)
+            self.show_samples(file_name=file_name, dataset=dataset)
             show_loss_plot(
                 self.losses,
                 self.iteration_checkpoints,
@@ -300,55 +302,120 @@ class Train(ABC, Generic[MParams, BuiltModel]):
             return False
 
     @abstractmethod
-    def show_samples(self, file_name=None, rows=6, cols=6):
+    def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
         raise NotImplementedError()
 
 
 class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
+    def __init__(
+        self,
+        built_model: BuiltDiffusionModel,
+        params: HyperParams,
+        mparams: DiffusionHyperParams,
+        label_getter: LabelGetter = None,
+        input_mapper: InputMapper = DefaultInputMapper(),
+    ) -> None:
+        super().__init__(built_model, params, mparams, label_getter, input_mapper)
+
+        # Fancy math stuff to make sure we don't have to loop to add noise, because its super slow
+        # Calculate alpha values from beta
+        alpha_schedule = 1 - mparams.beta_schedule
+        # Cumulative product of alphas and sqrt
+        self.sqrt_alphas_cumprod = [tf.math.sqrt(tf.math.reduce_prod(alpha_schedule[: t + 1])) for t in range(len(alpha_schedule))]
+        self.sqrt_one_minus_alphas_cumprod = [
+            tf.math.sqrt(1 - tf.math.reduce_prod(alpha_schedule[: t + 1])) for t in range(len(alpha_schedule))
+        ]
 
     def get_loss_plot(self, losses: Dict[str, Union[float, tf.Tensor]]) -> Dict[str, float]:
-        pass # TODO
+        return {
+            "Loss": float(losses["loss"]),
+        }
 
-    def show_samples(self, file_name=None, rows=6, cols=6):
-        pass # TODO
+    def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
+        n_imgs = 4
+        random_batch = next(iter(dataset))
+        random_img = random_batch[:n_imgs]
+
+        # Noise up the img, all the way to T
+        t = tf.constant(self.mparams.T - 1, dtype=tf.int32, shape=(n_imgs, 1, 1, 1))
+        noisy, real_noise = self.forward_diffusion_sample(random_img, t)
+        # Predict the noise
+        predicted_noise = self.built_model.model([noisy, t], training=False)
+
+        dir = self.params.prediction_path
+        # Print all the shapes
+
+        imgs_per_row = 4
+        labels = [
+            "Reconstructed",
+            "Predicted Noise",
+            "Noisy",
+            "Original",
+        ] * imgs_per_row 
+
+        images = [random_img - predicted_noise, predicted_noise, noisy, random_img]
+        images = [img.numpy() for img in images]
+        images = [img for sublist in zip(*images) for img in sublist]
+        visualize_thumbnails(images, rows=n_imgs, cols=imgs_per_row, dir=dir, file_name=file_name, label_list=labels)
 
     def load_weights(self):
-        pass # TODO
+        load_weights(self.built_model.model, self.params.weight_path)
 
     def save_weights(self):
-        pass # TODO
+        self.built_model.model.save_weights(self.params.weight_path)
 
     def save_weights_checkpoint(self, checkpoint_path: str, iteration: int):
-        pass # TODO
+        self.built_model.model.save_weights(f"{checkpoint_path}/{iteration}/weights")
 
-    def forward_diffusion_sample(self, x_0, t, device='/cpu:0') -> Tuple[tf.Tensor, tf.Tensor]:
-        """
-        x_0: Initial images, shape (batch_size, height, width, channels)
-        t: timestep
-        beta_schedule: A list or tensor of noise levels, beta, at each timestep
-        device: 'CPU:0' or 'GPU:0' etc.
-        """
+    def forward_diffusion_sample(self, x_0, t, device="/cpu:0"):
         with tf.device(device):
-            # x = tf.cast(x_0, tf.float32) # TODO Maybe don't need?
-            x = x_0
-            
-            final_noise = tf.zeros_like(x_0, dtype=tf.float32)
-            # Loop through the timesteps up to t
-            for i in range(t):
-                beta = self.mparams.beta_schedule[i]  # Get beta for this timestep
-                noise = tf.random.normal(shape=x.shape, mean=0., stddev=1.)  # Generate random noise
-                noise_scaled = tf.math.sqrt(beta) * noise  # Scale the noise
-                final_noise += noise_scaled
-                x = x * (1 - beta) + noise_scaled  # Add the noise to x
+            # Make sure x_0 is float
+            x = tf.cast(x_0, tf.float32)
 
-        return x, final_noise
+            # Grab the pre-computed scaling terms for timestep t
+            # sqrt_alpha_t = self.sqrt_alphas_cumprod[t]
+            # sqrt_one_minus_alpha_t = self.sqrt_one_minus_alphas_cumprod[t]
 
-    # TODO next up, make usre I can get samples for training
+            sqrt_alpha_t = tf.gather(self.sqrt_alphas_cumprod, t)
+            sqrt_one_minus_alpha_t = tf.gather(self.sqrt_one_minus_alphas_cumprod, t)
+
+            sqrt_alpha_t = tf.reshape(sqrt_alpha_t, [-1, 1, 1, 1])
+            sqrt_one_minus_alpha_t = tf.reshape(sqrt_one_minus_alpha_t, [-1, 1, 1, 1])
+
+            # Generate random noise
+            noise = tf.random.normal(shape=x.shape, mean=0.0, stddev=1.0)
+
+            # Calculate the noised-up image using the pre-computed scaling terms
+            x_noisy = sqrt_alpha_t * x + sqrt_one_minus_alpha_t * noise
+
+        return x_noisy, noise
+
+    # def forward_diffusion_sample_loop(self, x_0, t, device="/cpu:0") -> Tuple[tf.Tensor, tf.Tensor]:
+    #     """
+    #     Keeping this around because its esier to understand than the vectorized version
+    #     x_0: Initial images, shape (batch_size, height, width, channels)
+    #     t: timestep
+    #     device: 'CPU:0' or 'GPU:0' etc.
+    #     """
+    #     with tf.device(device):
+    #         # x = tf.cast(x_0, tf.float32) # TODO Maybe don't need?
+    #         x = x_0
+
+    #         final_noise = tf.zeros_like(x_0, dtype=tf.float32)
+    #         # Loop through the timesteps up to t
+    #         for i in range(t):
+    #             beta = self.mparams.beta_schedule[i]  # Get beta for this timestep
+    #             noise = tf.random.normal(shape=x.shape, mean=0.0, stddev=1.0)  # Generate random noise
+    #             noise_scaled = tf.math.sqrt(beta) * noise  # Scale the noise
+    #             final_noise += noise_scaled
+    #             x = x * (1 - beta) + noise_scaled  # Add the noise to x
+
+    #     return x, final_noise
+
     def train_body(self, data: tuple, dataset: tf.data.Dataset) -> Dict[str, Union[float, tf.Tensor]]:
-        t = tf.constant([[np.random.randint(0, self.mparams.T-1)]] * self.mparams.batch_size, dtype=tf.int32)
+        t = tf.constant([[np.random.randint(0, self.mparams.T - 1)]] * self.mparams.batch_size, dtype=tf.int32)
 
         with tf.GradientTape() as tape:
-
             # Generate noisy image and real noise for this timestep
             # Assuming you have a function forward_diffusion_sample to do this
             noisy_item, real_noise = self.forward_diffusion_sample(data, t)
@@ -363,7 +430,7 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
         grads = tape.gradient(loss, self.built_model.model.trainable_variables)
         self.built_model.optimizer.apply_gradients(zip(grads, self.built_model.model.trainable_variables))
 
-        return {}
+        return {"loss": loss}
 
 
 class TrainGAN(Train[GanHyperParams, BuiltGANModel]):
@@ -387,7 +454,7 @@ class TrainGAN(Train[GanHyperParams, BuiltGANModel]):
         if self.mparams.generator_training:
             self.built_model.generator_optimizer.apply_gradients(zip(gradient, self.built_model.generator.trainable_variables))
 
-    def show_samples(self, file_name=None, rows=6, cols=6):
+    def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
         noise = self.params.latent_sample(rows * cols)
         if self.label_getter is not None:
             labels = self.label_getter(rows * cols)

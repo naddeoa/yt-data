@@ -64,6 +64,10 @@ class HyperParams:
         return f"{self.base_dir}/{self.name}/weights_dis"
 
     @property
+    def weight_path(self):
+        return f"{self.base_dir}/{self.name}/weights_dis"
+
+    @property
     def prediction_path(self):
         return f"{self.base_dir}/{self.name}/predictions"
 

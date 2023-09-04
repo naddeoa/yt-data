@@ -66,7 +66,7 @@ class MyModel(DiffusionModel):
 
     def concat_embedding(self, x, embedding):
         _, H, W, C = x.shape
-        _x = Dense(H * W, use_bias=False)(embedding)(embedding)
+        _x = Dense(H * W, use_bias=False)(embedding)
         _x = Reshape((H, W, 1))(_x)
         return Concatenate()([x, _x])
 
@@ -78,36 +78,35 @@ class MyModel(DiffusionModel):
         x = Conv2D(64, kernel_size=3, strides=2, padding="same", use_bias=False)(img_input)
         x = LeakyReLU(alpha=0.2)(x)
         x = self.concat_embedding(x, e_embedding)
-        up1 = x  # 32x32x(64 + 1)
+        down1 = x  # 32x32x(64 + 1)
 
         x = Conv2D(128, kernel_size=3, strides=2, padding="same", use_bias=False)(x)
         x = InstanceNormalization()(x)
         x = LeakyReLU(alpha=0.2)(x)
         x = self.concat_embedding(x, e_embedding)
-        up2 = x  # 16x16x(128 + 1)
+        down2 = x  # 16x16x(128 + 1)
 
         x = Conv2D(256, kernel_size=3, strides=2, padding="same", use_bias=False)(x)
         x = InstanceNormalization()(x)
         x = LeakyReLU(alpha=0.2)(x)
         x = self.concat_embedding(x, e_embedding)
-        up3 = x  # 8x8x(256 + 1)
+        down3 = x  # 8x8x(256 + 1)
 
         x = Conv2DTranspose(256, kernel_size=3, strides=2, padding="same", use_bias=False)(x)
         x = InstanceNormalization()(x)
         x = LeakyReLU(alpha=0.2)(x)
-        x = Concatenate()([x, up3])  # 16x16x512
+        x = Concatenate()([x, down2])  # 16x16x512
         x = self.concat_embedding(x, e_embedding)  # 16x16x(512 + 1)
 
         x = Conv2DTranspose(128, kernel_size=3, strides=2, padding="same", use_bias=False)(x)
         x = InstanceNormalization()(x)
         x = LeakyReLU(alpha=0.2)(x)
-        x = Concatenate()([x, up2])  # 32x32x256
+        x = Concatenate()([x, down1])  # 32x32x256
         x = self.concat_embedding(x, e_embedding)  # 32x32x(256 + 1)
 
         x = Conv2DTranspose(64, kernel_size=3, strides=2, padding="same", use_bias=False)(x)
         x = InstanceNormalization()(x)
         x = LeakyReLU(alpha=0.2)(x)
-        x = Concatenate()([x, up1])  # 64x64x128
         x = self.concat_embedding(x, e_embedding)  # 64x64x(128 + 1)
 
         output = Conv2DTranspose(3, kernel_size=3, strides=1, padding="same", use_bias=False, activation="tanh")(x)
@@ -117,12 +116,12 @@ class MyModel(DiffusionModel):
 class MyExperiment(DiffusionExperiment):
     def __init__(self) -> None:
         super().__init__()
-        self.data = get_wow_icons_64()
+        self.data = get_pokemon_data256((64,64,3))
 
     def augment_data(self) -> bool:
         return False
 
-    def get_data(self) -> tf.data.Dataset:
+    def get_data(self) -> np.ndarray:
         return self.data
 
     def get_train(self, model: BuiltDiffusionModel, mparams: DiffusionHyperParams) -> Train:
@@ -135,7 +134,11 @@ class MyExperiment(DiffusionExperiment):
             batch_size=128,
             adam_b1=0.5,
             iterations=10000,
-            sample_interval=1,
+            sample_interval=20,
+
+            T=300,
+            beta=0.008,
+
             notes="""
 First take at diffusion. Lets see.
 """,
