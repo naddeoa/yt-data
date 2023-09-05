@@ -62,7 +62,7 @@ down_blocks = [2, 2, 2]
 class MyModel(DiffusionModel):
     def __init__(self, params: HyperParams, mparams: DiffusionHyperParams) -> None:
         super().__init__(params, mparams)
-        self.embed_dim = 30
+        self.embed_dim = int(mparams.T / 100)
 
     def down_resnet(
         self,
@@ -124,7 +124,7 @@ class MyModel(DiffusionModel):
                 kernel_size=kernel_size,
                 strides=strides,
                 padding="valid" if kernel_size > kern_size else "same",
-                use_bias=False,
+                use_bias=True,
             )
         )
         seq.add(InstanceNormalization())
@@ -137,7 +137,7 @@ class MyModel(DiffusionModel):
                     kernel_size=kernel_size,
                     strides=1,
                     padding="same",
-                    use_bias=False,
+                    use_bias=True,
                 )
             )
             seq.add(InstanceNormalization())
@@ -151,9 +151,9 @@ class MyModel(DiffusionModel):
     def concat_embedding(self, x, embedding, name: str):
         _, H, W, C = x.shape
 
-        s = Sequential([Dense(H * W, use_bias=False), Reshape((H, W, 1))], name=name)
+        s = Sequential([Dense(H * W, use_bias=True), Reshape((H, W, 1))], name=name)
         _x = s(embedding)
-        return Concatenate(name=name)([x, _x])
+        return Concatenate(name=f'embed_{name}')([x, _x])
 
     def get_model(self) -> Model:
         img_input = Input(shape=self.params.img_shape, name="image")
@@ -165,7 +165,7 @@ class MyModel(DiffusionModel):
 
         seed = Sequential(
             [
-                Conv2D(3, kernel_size=3, strides=1, padding="same", use_bias=False),
+                Conv2D(3, kernel_size=3, strides=1, padding="same", use_bias=True),
                 InstanceNormalization(),
                 LeakyReLU(alpha=0.2),
             ],
@@ -179,7 +179,7 @@ class MyModel(DiffusionModel):
             for _ in range(down_blocks[i]):
                 x = self.down_resnet(f, x, strides=1)
 
-            x = self.concat_embedding(x, e_embedding, name=f"embed_concat_down{i}")
+            x = self.concat_embedding(x, e_embedding, name=f"embed_down{i}")
             downs.append(x)
 
         downs.reverse()
@@ -189,9 +189,9 @@ class MyModel(DiffusionModel):
             for _ in range(up_blocks[i]):
                 x = self.up_resnet(f, x, strides=1, kernel_size=kern_size)
 
-            x = self.concat_embedding(x, e_embedding, name=f"embed_concat_up{i}")
+            x = self.concat_embedding(x, e_embedding, name=f"embed_up{i}")
 
-        output = Conv2D(3, kernel_size=3, strides=1, padding="same", use_bias=False, activation="tanh")(x)
+        output = Conv2D(3, kernel_size=3, strides=1, padding="same", use_bias=True, activation="tanh")(x)
         return Model([img_input, t_input], output, name="diffusion_model")
 
 
@@ -212,14 +212,15 @@ class MyExperiment(DiffusionExperiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 1720] = DiffusionHyperParams(
+        schedule[0, 100000] = DiffusionHyperParams(
             learning_rate=0.0002,
             batch_size=128,
             adam_b1=0.5,
-            iterations=1720,
+            iterations=100000,
             sample_interval=1,
             T=1000,
-            beta=0.002,
+            beta=0.001,
+            beta_schedule_type="linear"
         )
 
         return schedule

@@ -2,7 +2,7 @@ import tensorflow as tf
 import json
 import numpy as np
 from thumbs.model.model import BuiltGANModel, BuiltDiffusionModel
-from tensorflow.keras.losses import MeanSquaredError
+from tensorflow.keras.losses import MeanSquaredError, MeanAbsoluteError
 from thumbs.util import is_colab
 from thumbs.viz import show_loss_plot, visualize_thumbnails
 from thumbs.params import HyperParams, GanHyperParams, TurnMode, MutableHyperParams, DiffusionHyperParams
@@ -319,16 +319,73 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
 
         # Fancy math stuff to make sure we don't have to loop to add noise, because its super slow
         # Calculate alpha values from beta
-        alpha_schedule = 1 - mparams.beta_schedule
-        # Cumulative product of alphas and sqrt
-        self.sqrt_alphas_cumprod = [tf.math.sqrt(tf.math.reduce_prod(alpha_schedule[: t + 1])) for t in range(len(alpha_schedule))]
-        self.sqrt_one_minus_alphas_cumprod = [
-            tf.math.sqrt(1 - tf.math.reduce_prod(alpha_schedule[: t + 1])) for t in range(len(alpha_schedule))
-        ]
+        self.alpha = 1 - mparams.beta_schedule
+        self.alpha_hat = tf.math.cumprod(self.alpha)
+
+    # I made this up and it works ok but Im sus
+    def my_sample_new_images(self, n, step_size=10):
+        noise = tf.random.normal(shape=(n, *self.params.img_shape), mean=0.0, stddev=1.0)
+        # Rescale the noise to -1 to 1 range
+        noise = 2 * (noise - tf.reduce_min(noise)) / (tf.reduce_max(noise) - tf.reduce_min(noise)) - 1
+
+        x = noise
+        saved = []
+        for i, cur_t in enumerate(tqdm(range(self.mparams.T - 1, 0, -step_size))):
+            t = tf.constant(cur_t, shape=(n, 1), dtype=tf.int32)
+            if i > 0:
+                # already noisy at the start
+                x, _ = self.forward_diffusion_sample(x, t)
+
+            predicted_noise = self.built_model.model.predict([x, t], verbose=False)
+            x = self.reverse_diffusion_sample(x, predicted_noise, t)
+            saved.append((x, cur_t))
+
+        # Once more for t=0
+        t = tf.constant(0, shape=(n, 1), dtype=tf.int32)
+        predicted_noise = self.built_model.model.predict([x, t], verbose=False)
+        x = self.reverse_diffusion_sample(x, predicted_noise, t)
+        saved.append((x, 0))
+
+        return x, saved
+
+    # Got this online but it doesn't look like it works
+    def sample_new_image(self, n, step_size=10):
+        x = tf.random.normal((n, self.params.img_shape[0], self.params.img_shape[1], self.params.img_shape[2]))
+
+        for i in reversed(tqdm(range(1, self.mparams.T, step_size))):
+            t = tf.constant(i, shape=(n,), dtype=tf.int32)
+
+            predicted_noise = self.built_model.model([x, t], training=False)
+
+            alpha = tf.gather(self.alpha, t)  # Gives an error
+            alpha = tf.reshape(alpha, [-1, 1, 1, 1])
+
+            alpha_hat = tf.gather(self.alpha_hat, t)
+            alpha_hat = tf.reshape(alpha_hat, [-1, 1, 1, 1])
+
+            beta = tf.gather(self.mparams.beta_schedule, t)
+            beta = tf.reshape(beta, [-1, 1, 1, 1])
+
+            if i > 1:
+                noise = tf.random.normal(shape=tf.shape(x))
+            else:
+                noise = tf.zeros_like(x)
+
+            x = (1 / tf.sqrt(alpha)) * (x - ((1 - alpha) / tf.sqrt(1 - alpha_hat)) * predicted_noise) + tf.sqrt(beta) * noise
+
+        x = tf.clip_by_value(x, -1, 1)
+        x = (x + 1) / 2
+        x = tf.cast(x * 255, dtype=tf.uint8)
+        return x
 
     def get_loss_plot(self, losses: Dict[str, Union[float, tf.Tensor]]) -> Dict[str, float]:
+        if isinstance(losses["loss"], float):
+            loss = losses["loss"]
+        else:
+            loss = float(losses["loss"].numpy())
+
         return {
-            "Loss": float(losses["loss"]),
+            "Loss": loss,
         }
 
     def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
@@ -339,12 +396,15 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
         # Noise up the img, all the way to T
         # t = tf.constant(self.mparams.T - 1, dtype=tf.int32, shape=(n_imgs, 1, 1, 1))
 
-        t = tf.constant([
-            [np.random.randint(0, self.mparams.T - 1)],
-            [np.random.randint(0, self.mparams.T - 1)],
-            [np.random.randint(0, self.mparams.T - 1)],
-            [np.random.randint(0, self.mparams.T - 1)]
-            ], dtype=tf.int32)
+        t = tf.constant(
+            [
+                [np.random.randint(0, self.mparams.T - 1)],
+                [np.random.randint(0, self.mparams.T - 1)],
+                [np.random.randint(0, self.mparams.T - 1)],
+                [np.random.randint(0, self.mparams.T - 1)],
+            ],
+            dtype=tf.int32,
+        )
 
         noisy, real_noise = self.forward_diffusion_sample(random_img, t)
         # Predict the noise
@@ -356,7 +416,7 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
         imgs_per_row = 4
 
         labels = []
-        for i in range (n_imgs):
+        for i in range(n_imgs):
             labels += [
                 "Reconstructed",
                 "Predicted Noise",
@@ -381,75 +441,50 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
 
     def forward_diffusion_sample(self, x_0, t, device="/cpu:0"):
         with tf.device(device):
-            # Make sure x_0 is float
             x = tf.cast(x_0, tf.float32)
 
-            # Grab the pre-computed scaling terms for timestep t
-            # sqrt_alpha_t = self.sqrt_alphas_cumprod[t]
-            # sqrt_one_minus_alpha_t = self.sqrt_one_minus_alphas_cumprod[t]
+            sqrt_alpha_hat = tf.math.sqrt(tf.gather(self.alpha_hat, t))
+            sqrt_alpha_hat = tf.reshape(sqrt_alpha_hat, [-1, 1, 1, 1])
 
-            sqrt_alpha_t = tf.gather(self.sqrt_alphas_cumprod, t)
-            sqrt_one_minus_alpha_t = tf.gather(self.sqrt_one_minus_alphas_cumprod, t)
-
-            sqrt_alpha_t = tf.reshape(sqrt_alpha_t, [-1, 1, 1, 1])
-            sqrt_one_minus_alpha_t = tf.reshape(sqrt_one_minus_alpha_t, [-1, 1, 1, 1])
+            sqrt_one_minus_alpha_hat = tf.math.sqrt(1 - tf.gather(self.alpha_hat, t))
+            sqrt_one_minus_alpha_hat = tf.reshape(sqrt_one_minus_alpha_hat, [-1, 1, 1, 1])
 
             # Generate random noise
             noise = tf.random.normal(shape=x.shape, mean=0.0, stddev=1.0)
 
             # Calculate the noised-up image using the pre-computed scaling terms
-            x_noisy = sqrt_alpha_t * x + sqrt_one_minus_alpha_t * noise
+            x_noisy = sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * noise
 
         return x_noisy, noise
 
-    def reverse_diffusion_sample(self, x_noisy, noise, t):
-        # Recompute the scaling terms for this timestep
-        sqrt_alpha_t = tf.gather(self.sqrt_alphas_cumprod, t)
-        sqrt_one_minus_alpha_t = tf.gather(self.sqrt_one_minus_alphas_cumprod, t)
-        
-        sqrt_alpha_t = tf.reshape(sqrt_alpha_t, [-1, 1, 1, 1])
-        sqrt_one_minus_alpha_t = tf.reshape(sqrt_one_minus_alpha_t, [-1, 1, 1, 1])
-        
-        # Reverse the noising operation to get back to the original x
-        x_original = (x_noisy - sqrt_one_minus_alpha_t * noise) / sqrt_alpha_t
+    def reverse_diffusion_sample(self, x_noisy, noise, t, device="/cpu:0"):
+        with tf.device(device):
+            # Grab the same sqrt_alpha_hat and sqrt_one_minus_alpha_hat values
+            sqrt_alpha_hat = tf.math.sqrt(tf.gather(self.alpha_hat, t))
+            sqrt_alpha_hat = tf.reshape(sqrt_alpha_hat, [-1, 1, 1, 1])
+
+            sqrt_one_minus_alpha_hat = tf.math.sqrt(1 - tf.gather(self.alpha_hat, t))
+            sqrt_one_minus_alpha_hat = tf.reshape(sqrt_one_minus_alpha_hat, [-1, 1, 1, 1])
+
+            # Reverse the noise addition to recover the original x
+            x_original = (x_noisy - sqrt_one_minus_alpha_hat * noise) / sqrt_alpha_hat
+
         return x_original
 
-
-    # def forward_diffusion_sample_loop(self, x_0, t, device="/cpu:0") -> Tuple[tf.Tensor, tf.Tensor]:
-    #     """
-    #     Keeping this around because its esier to understand than the vectorized version
-    #     x_0: Initial images, shape (batch_size, height, width, channels)
-    #     t: timestep
-    #     device: 'CPU:0' or 'GPU:0' etc.
-    #     """
-    #     with tf.device(device):
-    #         # x = tf.cast(x_0, tf.float32) # TODO Maybe don't need?
-    #         x = x_0
-
-    #         final_noise = tf.zeros_like(x_0, dtype=tf.float32)
-    #         # Loop through the timesteps up to t
-    #         for i in range(t):
-    #             beta = self.mparams.beta_schedule[i]  # Get beta for this timestep
-    #             noise = tf.random.normal(shape=x.shape, mean=0.0, stddev=1.0)  # Generate random noise
-    #             noise_scaled = tf.math.sqrt(beta) * noise  # Scale the noise
-    #             final_noise += noise_scaled
-    #             x = x * (1 - beta) + noise_scaled  # Add the noise to x
-
-    #     return x, final_noise
-
     def train_body(self, data: tuple, dataset: tf.data.Dataset) -> Dict[str, Union[float, tf.Tensor]]:
-        t = tf.constant([[np.random.randint(0, self.mparams.T - 1)]] * self.mparams.batch_size, dtype=tf.int32)
+        t = tf.constant(np.random.randint(0, self.mparams.T - 1, size=(self.mparams.batch_size, 1)))
+        # t = tf.constant([[np.random.randint(0, self.mparams.T - 1)]] * self.mparams.batch_size, dtype=tf.int32)
 
         with tf.GradientTape() as tape:
             # Generate noisy image and real noise for this timestep
             # Assuming you have a function forward_diffusion_sample to do this
-            noisy_item, real_noise = self.forward_diffusion_sample(data, t, device='/gpu:0')
+            noisy_item, real_noise = self.forward_diffusion_sample(data, t, device="/gpu:0")
 
             # Forward pass: Get model's prediction of the noise added at this timestep
             predicted_noise = self.built_model.model([noisy_item, t], training=True)
 
             # Compute loss between the real noise and the predicted noise
-            loss = MeanSquaredError()(real_noise, predicted_noise)
+            loss = MeanAbsoluteError()(real_noise, predicted_noise)  # l1
 
         # Backprop and update weights
         grads = tape.gradient(loss, self.built_model.model.trainable_variables)

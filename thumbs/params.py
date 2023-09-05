@@ -136,16 +136,34 @@ class MutableHyperParams:
         if self.checkpoint_interval == -1:
             self.checkpoint_interval = self.sample_interval * 10
 
+import numpy as np
+
+def cos_linspace(start, stop, num_points):
+    # Generate a linear space between 0 and pi
+    linear_space = np.linspace(np.pi, 0, num_points)
+    
+    # Get the cosine of that linear space
+    cosine_space = np.cos(linear_space)
+    
+    # Scale and translate to the desired range
+    scaled_cosine_space = start + (stop - start) * (cosine_space + 1) / 2
+    
+    return scaled_cosine_space
+
 
 @dataclass
 class DiffusionHyperParams(MutableHyperParams):
     T: int = 300
     beta: float = 0.2  # beta value at the last timestep
     beta_schedule: tf.Tensor = tf.constant(-1)
+    beta_schedule_type: str = "linear"  # "linear" or "cos"
 
     def __post_init__(self):
         if self.beta_schedule == -1:
-            beta_schedule = np.linspace(0, self.beta, self.T)
+            if self.beta_schedule_type == "linear":
+                beta_schedule = np.linspace(0, self.beta, self.T)
+            else:
+                beta_schedule = cos_linspace(0, self.beta, self.T)
             self.beta_schedule = tf.convert_to_tensor(beta_schedule, dtype=tf.float32)
 
 
