@@ -1,9 +1,10 @@
 from dataclasses import dataclass
+from keras.losses import MeanSquaredError, MeanAbsoluteError
 import tensorflow as tf
 import yaml
 import os
 import numpy as np
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Callable
 from enum import Enum
 
 
@@ -119,11 +120,11 @@ class MutableHyperParams:
     iterations: int  # = 200_000
     batch_size: int  # = 128
     sample_interval: int  # = 100
-    adam_b1: float  # = 0.5
     learning_rate: float = -1
     checkpoint_interval: int = -1
     clipnorm: Optional[float] = None
     weight_decay: float = 0.004
+    adam_b1: float  = 0.9
     adam_b2: float = 0.999  # = 0.5
     notes: Optional[str] = None
     l1_loss_factor: Optional[float] = None
@@ -153,18 +154,21 @@ def cos_linspace(start, stop, num_points):
 
 @dataclass
 class DiffusionHyperParams(MutableHyperParams):
-    T: int = 300
-    beta: float = 0.2  # beta value at the last timestep
-    beta_schedule: tf.Tensor = tf.constant(-1)
+    T: int = 1000
+    beta_start: float = 0.0001  # beta value at the first timestep
+    beta_end: float = 0.2  # beta value at the last timestep
+    beta: tf.Tensor = tf.constant(-1)
     beta_schedule_type: str = "linear"  # "linear" or "cos"
+    loss_fn: Callable = MeanSquaredError() 
 
     def __post_init__(self):
-        if self.beta_schedule == -1:
+        if self.beta == -1:
             if self.beta_schedule_type == "linear":
-                beta_schedule = np.linspace(0, self.beta, self.T)
+                self.beta = tf.linspace(self.beta_start, self.beta_end, self.T)
             else:
-                beta_schedule = cos_linspace(0, self.beta, self.T)
-            self.beta_schedule = tf.convert_to_tensor(beta_schedule, dtype=tf.float32)
+                raise Exception("TODO")
+                # beta_schedule = cos_linspace(self.beta_start, self.beta_end, self.T)
+                # self.beta = tf.convert_to_tensor(beta_schedule)
 
 
 @dataclass

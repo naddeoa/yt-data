@@ -43,7 +43,9 @@ def show_accuracy_plot(accuracies_rf, iteration_checkpoints, dir: str, file_name
     plt.close()
 
 
-def show_loss_plot_gan(losses: List[Tuple[float, float]], iteration_checkpoints: List[int], dir: str, file_name: str, save_as_latest: bool = True) -> None:
+def show_loss_plot_gan(
+    losses: List[Tuple[float, float]], iteration_checkpoints: List[int], dir: str, file_name: str, save_as_latest: bool = True
+) -> None:
     losses_np = np.asarray(losses)
     disc_loss = losses_np.T[0]
     gen_loss = losses_np.T[1]
@@ -76,6 +78,7 @@ def show_loss_plot_gan(losses: List[Tuple[float, float]], iteration_checkpoints:
         plt.savefig(f"{dir}/_latest-loss.jpg")
     plt.savefig(f"{dir}/loss-{file_name}.jpg")
     plt.close()
+
 
 def show_loss_plot(losses: Dict[str, List[float]], iteration_checkpoints, dir: str, file_name: str, save_as_latest: bool = True) -> None:
     """
@@ -183,7 +186,7 @@ def visualize_preprocessed_image(image, size=None):
     plt.close()
 
 
-def visualize_thumbnails(image_list, rows, cols, dir=None, file_name=None, label_list: Optional[List[str]]=None):
+def visualize_thumbnails(image_list, rows, cols, dir=None, file_name=None, label_list: Optional[List[str]] = None):
     plt.cla()
     plt.clf()
     # Create a grid of subplots to display the images
@@ -222,6 +225,36 @@ def visualize_thumbnails(image_list, rows, cols, dir=None, file_name=None, label
         plt.savefig(f"{dir}/_latest.jpg", bbox_inches="tight")
         plt.savefig(f"{dir}/thumbnail-{file_name}.jpg", bbox_inches="tight")
     plt.close()
+
+
+def visualize_preprocessed_grid(images, rows=None, cols=None):
+    n_images = len(images)
+    images = unnormalize_image(images)
+    
+    # Determine number of rows and columns
+    if rows is None and cols is None:
+        rows = int(np.sqrt(n_images))
+        cols = rows
+    elif rows is not None:
+        cols = int(np.ceil(n_images / rows))
+    elif cols is not None:
+        rows = int(np.ceil(n_images / cols))
+        
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 3, rows * 4))
+    
+    # Make sure axes is an array (useful for edge cases with 0 row or 1 column)
+    axes = np.array(axes).reshape(-2)
+    
+    for idx, (ax, img) in enumerate(zip(axes, images)):
+        ax.imshow(img)
+        ax.axis('off')
+        ax.set_title(f"Index: {idx}")
+        
+    # Turn off any extra subplots
+    for ax in axes[n_images:]:
+        ax.axis('off')
+    
+    plt.show()
 
 
 # deprecated
