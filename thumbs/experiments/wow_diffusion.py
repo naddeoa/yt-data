@@ -227,18 +227,8 @@ class MyModel(DiffusionModel):
         downs.reverse()
 
         # bottleneck convolutions
-        bottleneck = Sequential()
         for i in range(nbn):
-            b = Sequential(
-                [
-                    Conv2D(ngf * gen_highest_f, kernel_size=3, strides=1, padding="same", use_bias=True),
-                    GroupNormalization(1),
-                    tf.keras.layers.Activation("gelu"),
-                ],
-                name=f"bottleneck_{i}",
-            )
-            bottleneck.add(b)
-        x = bottleneck(x)
+            x = self.down_resnet(f, x, strides=1)
 
         # Up stack
         for i, f in enumerate(np.linspace(gen_highest_f, 1, len(up_blocks), dtype=int)):
@@ -250,7 +240,7 @@ class MyModel(DiffusionModel):
 
             x = self.positional_encoding_layer(x, t_pos, name=f"pos_up{i}")  # add positional information back in
 
-        output = Conv2D(3, kernel_size=3, strides=1, padding="same", use_bias=True, activation="tanh")(x)
+        output = Conv2D(3, kernel_size=3, strides=1, padding="same")(x)
         return Model([img_input, t_input], output, name="diffusion_model")
 
 
@@ -272,13 +262,13 @@ class MyExperiment(DiffusionExperiment):
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
         schedule[0, 100000] = DiffusionHyperParams(
-            learning_rate=0.0003,
-            batch_size=4,
+            learning_rate=0.0002,
+            batch_size=256,
             # adam_b1=0.5,
             iterations=100000,
             sample_interval=1,
             T=1000,
-            beta_start=0.0001,
+            beta_start=1e-4,
             beta_end=0.02,
             beta_schedule_type="linear",
             loss_fn=MeanSquaredError(),

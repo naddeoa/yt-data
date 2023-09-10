@@ -44,5 +44,6 @@ def normalize_image(img_array: np.ndarray) -> np.ndarray:
 def unnormalize_image(image):
     # This scales it back up to the range [0, 255]. It looks a little different
     # rendered from here than it does from -1,1
+    image = np.clip(image, -1, 1)
     image = (image + 1) * 127.5
     return image.astype(np.uint8)

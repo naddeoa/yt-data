@@ -164,7 +164,8 @@ class DiffusionHyperParams(MutableHyperParams):
     def __post_init__(self):
         if self.beta == -1:
             if self.beta_schedule_type == "linear":
-                self.beta = tf.linspace(self.beta_start, self.beta_end, self.T)
+                # self.beta = tf.linspace(self.beta_start, self.beta_end, self.T)
+                self.beta = tf.convert_to_tensor(np.linspace(self.beta_start, self.beta_end, self.T, dtype=np.float32))
             else:
                 raise Exception("TODO")
                 # beta_schedule = cos_linspace(self.beta_start, self.beta_end, self.T)
