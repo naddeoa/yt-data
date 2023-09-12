@@ -1,13 +1,14 @@
 import tensorflow as tf
 import json
 import numpy as np
+from thumbs.diffusion import Diffusion
 from thumbs.model.model import BuiltGANModel, BuiltDiffusionModel
 from tensorflow.keras.losses import MeanSquaredError, MeanAbsoluteError
 from thumbs.util import is_colab
-from thumbs.viz import show_loss_plot, visualize_thumbnails
+from thumbs.viz import show_loss_plot, visualize_grid, visualize_thumbnails
 from thumbs.params import HyperParams, GanHyperParams, TurnMode, MutableHyperParams, DiffusionHyperParams
 from thumbs.loss import Loss
-from typing import List, Optional, Tuple, Any, Optional, Callable, Dict, Union, TypeVar, Generic
+from typing import List, Optional, Tuple, Any, Optional, Callable, Dict, Union, TypeVar, Generic, cast
 from abc import ABC, abstractmethod
 import pathlib
 import os
@@ -269,6 +270,23 @@ class Train(ABC, Generic[MParams, BuiltModel]):
             save_as_json(self.iteration_checkpoints, f"{checkpoint_path}/{iteration}/{iter_checkpoint_file_name}")
 
         if (iteration) % sample_interval == 0:
+            file_name = str(iteration)
+            self.show_samples(file_name=file_name, dataset=dataset)
+            show_loss_plot(
+                self.losses,
+                self.iteration_checkpoints,
+                dir=self.params.prediction_path,
+                file_name=file_name,
+            )
+
+            # Show the plot again but only use the last 50 items for each series
+            most_recent = {k: v[-50:] for k, v in self.losses.items()}
+
+            show_loss_plot(
+                most_recent, self.iteration_checkpoints[-50:], dir=self.params.prediction_path, file_name="zoom", save_as_latest=False
+            )
+
+        if (iteration) % self.mparams.model_save_interval == 0:
             # Save losses and accuracies so they can be plotted after training
             self.save_weights()
             save_iterations(self.params.iteration_path, iteration)
@@ -285,22 +303,6 @@ class Train(ABC, Generic[MParams, BuiltModel]):
             # save_as_json(self.accuracies, self.params.accuracy_path)
             save_as_json(self.losses, self.params.loss_path)
             save_as_json(self.iteration_checkpoints, self.params.iteration_checkpoints_path)
-
-            file_name = str(iteration)
-            self.show_samples(file_name=file_name, dataset=dataset)
-            show_loss_plot(
-                self.losses,
-                self.iteration_checkpoints,
-                dir=self.params.prediction_path,
-                file_name=file_name,
-            )
-
-            # Show the plot again but only use the last 50 items for each series
-            most_recent = {k: v[-50:] for k, v in self.losses.items()}
-
-            show_loss_plot(
-                most_recent, self.iteration_checkpoints[-50:], dir=self.params.prediction_path, file_name="zoom", save_as_latest=False
-            )
 
             return True
         else:
@@ -321,10 +323,13 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
         input_mapper: InputMapper = DefaultInputMapper(),
     ) -> None:
         super().__init__(built_model, params, mparams, label_getter, input_mapper)
+        self.diffusion = Diffusion(mparams, params, built_model.model)
 
-        # Fancy math stuff to make sure we don't have to loop to add noise, because its super slow
-        self.alpha = 1.0 - mparams.beta
-        self.alpha_hat = tf.math.cumprod(self.alpha, axis=0)
+    def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
+        # return self.diffusion.show_samples(dataset, file_name, rows, cols)
+        samples = self.diffusion.sample(rows * cols, clip=False)
+        dir = self.params.prediction_path
+        return visualize_grid(samples.numpy(), rows=rows, normalized=False, dir=dir, file_name=file_name)
 
     def load_weights(self):
         load_weights(self.built_model.model, self.params.weight_path)
@@ -340,110 +345,13 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
             "Loss": losses["loss"] if isinstance(losses["loss"], float) else float(losses["loss"].numpy()),
         }
 
-    def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
-        n_imgs = 4
-        random_batch = next(iter(dataset))
-        random_img = random_batch[:n_imgs]
-
-        t = tf.constant(
-            [
-                [np.random.randint(0, self.mparams.T - 1)],
-                [np.random.randint(0, self.mparams.T - 1)],
-                [np.random.randint(0, self.mparams.T - 1)],
-                [np.random.randint(0, self.mparams.T - 1)],
-            ],
-            dtype=tf.int32,
-        )
-
-        noisy, real_noise = self.add_noise(random_img, t)
-        # Predict the noise
-        predicted_noise = self.built_model.model([noisy, t], training=False)
-
-        dir = self.params.prediction_path
-        imgs_per_row = 4
-
-        labels = []
-        for i in range(n_imgs):
-            labels += [
-                "Original",
-                "Reconstructed",
-                f"Noisy (t={t[i].numpy()[0]})",
-                "Predicted Noise",
-            ]
-
-        denoised_img = self.remove_noise(noisy, predicted_noise, t)
-        images = [random_img.numpy(), denoised_img.numpy(), noisy.numpy(), predicted_noise.numpy()]
-        images = [img for sublist in zip(*images) for img in sublist]
-        visualize_thumbnails(images, rows=n_imgs, cols=imgs_per_row, dir=dir, file_name=file_name, label_list=labels)
-
-    # Got this online but it doesn't look like it works for my code
-    # @tf.function
-    def sample(
-        self,
-        n,
-    ):
-        x = tf.random.normal((n, *self.params.img_shape))
-        samples = []
-        for i in tqdm(list(reversed(range(1, self.mparams.T)))):
-            t = tf.ones(n, dtype=tf.int32) * i
-            predicted_noise = self.built_model.model.predict([x, t], verbose=False)  # Assuming model accepts x and t
-
-            alpha = tf.gather(self.alpha, t)
-            alpha = tf.reshape(alpha, [-1, 1, 1, 1])
-
-            alpha_hat = tf.gather(self.alpha_hat, t)
-            alpha_hat = tf.reshape(alpha_hat, [-1, 1, 1, 1])
-
-            beta = tf.gather(self.mparams.beta, t)
-            beta = tf.reshape(beta, [-1, 1, 1, 1])
-
-            if i > 1:
-                noise = tf.random.normal(tf.shape(x))
-            else:
-                noise = tf.zeros(tf.shape(x))
-
-            x = (1 / tf.sqrt(alpha)) * (x - ((1 - alpha) / tf.sqrt(1 - alpha_hat)) * predicted_noise) + tf.sqrt(beta) * noise
-
-            if i % 10 == 0:
-                samples.append(x.numpy())
-
-        x = tf.clip_by_value(x, -1, 1)
-        x = (x + 1) / 2
-        x = tf.cast(x * 255, tf.uint8)
-        return x, samples
-
-    # @tf.function
-    def add_noise(self, x, t):
-        sqrt_alpha_hat = tf.math.sqrt(tf.gather(self.alpha_hat, t))
-        sqrt_alpha_hat = tf.reshape(sqrt_alpha_hat, [-1, 1, 1, 1])
-
-        sqrt_one_minus_alpha_hat = tf.math.sqrt(1 - tf.gather(self.alpha_hat, t))
-        sqrt_one_minus_alpha_hat = tf.reshape(sqrt_one_minus_alpha_hat, [-1, 1, 1, 1])
-
-        noise = tf.random.normal(tf.shape(x))
-        return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * noise, noise
-
-    def remove_noise(self, x_noisy, noise, t, device="/cpu:0"):
-        with tf.device(device):
-            # Grab the same sqrt_alpha_hat and sqrt_one_minus_alpha_hat values
-            sqrt_alpha_hat = tf.math.sqrt(tf.gather(self.alpha_hat, t))
-            sqrt_alpha_hat = tf.reshape(sqrt_alpha_hat, [-1, 1, 1, 1])
-
-            sqrt_one_minus_alpha_hat = tf.math.sqrt(1 - tf.gather(self.alpha_hat, t))
-            sqrt_one_minus_alpha_hat = tf.reshape(sqrt_one_minus_alpha_hat, [-1, 1, 1, 1])
-
-            # Reverse the noise addition to recover the original x
-            x_original = (x_noisy - sqrt_one_minus_alpha_hat * noise) / sqrt_alpha_hat
-
-        return x_original
-
     def train_body(self, data, dataset: tf.data.Dataset) -> Dict[str, Union[float, tf.Tensor]]:
         # Apparently we don't want to ever sample 0
         t = tf.random.uniform(shape=(self.mparams.batch_size,), minval=1, maxval=self.mparams.T, dtype=tf.int32)
 
         # Generate noisy image and real noise for this timestep
         # Assuming you have a function forward_diffusion_sample to do this
-        noisy_item, real_noise = self.add_noise(data, t)
+        noisy_item, real_noise = self.diffusion.add_noise(data, t)
 
         with tf.GradientTape() as tape:
             # Forward pass: Get model's prediction of the noise added at this timestep

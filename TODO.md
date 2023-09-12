@@ -1,5 +1,10 @@
+# Diffusion
 
-# To try
+## Questions
+- Should I clip the generated noise to -1,1? And what about using tanh on the model?
+
+# Gans
+## To try
 - Add new conv and transfer the weights of prev models to prog grow to 256x256
 - restart training but use the trained disciminator next time
 
@@ -27,5 +32,5 @@
 - DONE get rid off all non-conv
     - Just used kernel=4,stride=1 to go from original latent space to higher dimensions https://github.com/davidADSP/Generative_Deep_Learning_2nd_Edition/blob/main/notebooks/04_gan/02_wgan_gp/wgan_gp.ipynb
 
-# Questions
+## Questions
 - is gelu 1-Lipschitz? It appears to be but I don't feel confident yet.

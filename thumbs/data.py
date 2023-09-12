@@ -220,11 +220,11 @@ def get_yt_data(
     return np.asarray(no_shorts_dataset)
 
 
-def get_wow_icons_64() -> tf.data.Dataset:
+def get_wow_icons_64(size: Tuple[int, int, int] = (64, 64, 3)) -> tf.data.Dataset:
     def load_image(file_path):
         img = tf.io.read_file(file_path)
         img = tf.image.decode_jpeg(img, channels=3)
-        img = tf.image.resize(img, [64, 64])
+        img = tf.image.resize(img, size[:2])
         img = (img - 127.5) / 127.5  # Normalize to [-1,1]
         return img
 

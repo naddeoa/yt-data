@@ -227,10 +227,20 @@ def visualize_thumbnails(image_list, rows, cols, dir=None, file_name=None, label
     plt.close()
 
 
-def visualize_preprocessed_grid(images, rows=None, cols=None):
+def visualize_grid(
+    images,
+    rows=None,
+    cols=None,
+    normalized=True,
+    dir=None,
+    file_name=None,
+    title_index=False,
+):
     n_images = len(images)
-    images = unnormalize_image(images)
-    
+
+    if normalized:
+        images = unnormalize_image(images)
+
     # Determine number of rows and columns
     if rows is None and cols is None:
         rows = int(np.sqrt(n_images))
@@ -239,22 +249,29 @@ def visualize_preprocessed_grid(images, rows=None, cols=None):
         cols = int(np.ceil(n_images / rows))
     elif cols is not None:
         rows = int(np.ceil(n_images / cols))
-        
+
     fig, axes = plt.subplots(rows, cols, figsize=(cols * 3, rows * 4))
-    
+
     # Make sure axes is an array (useful for edge cases with 0 row or 1 column)
     axes = np.array(axes).reshape(-2)
-    
+
     for idx, (ax, img) in enumerate(zip(axes, images)):
         ax.imshow(img)
-        ax.axis('off')
-        ax.set_title(f"Index: {idx}")
-        
+        ax.axis("off")
+        if title_index:
+            ax.set_title(f"Index: {idx}")
+
     # Turn off any extra subplots
     for ax in axes[n_images:]:
-        ax.axis('off')
-    
-    plt.show()
+        ax.axis("off")
+
+    if is_notebook():
+        plt.show()
+    if dir is not None and file_name is not None:
+        if not os.path.exists(dir):
+            os.mkdir(dir)
+        plt.savefig(f"{dir}/_latest_grid.jpg", bbox_inches="tight")
+        plt.savefig(f"{dir}/grid-{file_name}.jpg", bbox_inches="tight")
 
 
 # deprecated

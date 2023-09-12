@@ -63,7 +63,6 @@ ndf = 64
 disc_highest_f = 4
 down_blocks = [1, 1, 1]
 
-
 class MyModel(DiffusionModel):
     def __init__(self, params: HyperParams, mparams: DiffusionHyperParams) -> None:
         super().__init__(params, mparams)
@@ -81,14 +80,12 @@ class MyModel(DiffusionModel):
         input_x = x
         seq = Sequential()
         seq.add(
-            # SpectralNormalization(
             Conv2D(
                 channels,
                 kernel_size=kernel_size,
                 strides=strides,
                 padding="same",
             )
-            # )
         )
 
         if normalize:
@@ -98,14 +95,12 @@ class MyModel(DiffusionModel):
 
         if strides == 1:
             seq.add(
-                # SpectralNormalization(
                 Conv2D(
                     channels,
                     kernel_size=kernel_size,
                     strides=1,
                     padding="same",
                 )
-                # )
             )
             seq.add(GroupNormalization(1))
 
@@ -144,7 +139,7 @@ class MyModel(DiffusionModel):
         if strides == 1 and kernel_size == kern_size:
             seq.add(
                 Conv2DTranspose(
-                    f * ngf,
+                    channels,
                     kernel_size=kernel_size,
                     strides=1,
                     padding="same",
@@ -251,7 +246,7 @@ class MyExperiment(DiffusionExperiment):
         self.data = get_wow_icons_64()
 
     def augment_data(self) -> bool:
-        return False
+        return False 
 
     def get_data(self) -> Union[np.ndarray, tf.data.Dataset]:
         return self.data
@@ -263,15 +258,15 @@ class MyExperiment(DiffusionExperiment):
         schedule = RangeDict()
         schedule[0, 100000] = DiffusionHyperParams(
             learning_rate=0.0002,
-            batch_size=256,
-            # adam_b1=0.5,
+            batch_size=128,
             iterations=100000,
             sample_interval=1,
+
             T=1000,
-            beta_start=1e-4,
-            beta_end=0.02,
-            beta_schedule_type="linear",
-            loss_fn=MeanSquaredError(),
+            beta_start = .0001,
+            beta_end = 0.04,
+            beta_schedule_type="easein",
+            loss_fn=MeanAbsoluteError(),
         )
 
         return schedule
@@ -279,7 +274,7 @@ class MyExperiment(DiffusionExperiment):
     def get_params(self) -> HyperParams:
         return HyperParams(
             latent_dim=100,  # gen_highest_f * ngf,
-            name="wow_diffusion_mse",
+            name="wow_diffusion_mae_easein",
             img_shape=(64, 64, 3),
             sampler=Sampler.NORMAL,
         )

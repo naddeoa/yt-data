@@ -4,7 +4,7 @@ import tensorflow as tf
 import yaml
 import os
 import numpy as np
-from typing import Tuple, Optional, List, Callable
+from typing import Tuple, Optional, List, Callable, Dict
 from enum import Enum
 
 
@@ -120,11 +120,12 @@ class MutableHyperParams:
     iterations: int  # = 200_000
     batch_size: int  # = 128
     sample_interval: int  # = 100
+    model_save_interval: int = -1
     learning_rate: float = -1
     checkpoint_interval: int = -1
     clipnorm: Optional[float] = None
     weight_decay: float = 0.004
-    adam_b1: float  = 0.9
+    adam_b1: float = 0.9
     adam_b2: float = 0.999  # = 0.5
     notes: Optional[str] = None
     l1_loss_factor: Optional[float] = None
@@ -136,21 +137,56 @@ class MutableHyperParams:
     def __post_init__(self):
         if self.checkpoint_interval == -1:
             self.checkpoint_interval = self.sample_interval * 10
+        
+        if self.model_save_interval == -1:
+            self.model_save_interval = self.sample_interval
+
 
 import numpy as np
+
 
 def cos_linspace(start, stop, num_points):
     # Generate a linear space between 0 and pi
     linear_space = np.linspace(np.pi, 0, num_points)
-    
+
     # Get the cosine of that linear space
     cosine_space = np.cos(linear_space)
-    
+
     # Scale and translate to the desired range
     scaled_cosine_space = start + (stop - start) * (cosine_space + 1) / 2
-    
+
     return scaled_cosine_space
 
+
+def in_out_easing(start, end, steps):
+    # Generate the range
+    t = tf.linspace(start, end, steps)
+
+    # Normalize t to the range [0, 1]
+    t_norm = (t - start) / (end - start)
+
+    # Apply the smoothstep function for in-out easing
+    t_smooth = 3 * tf.math.pow(t_norm, 2) - 2 * tf.math.pow(t_norm, 3)
+
+    # Scale it back to the [start, end] range
+    t_smooth = start + (end - start) * t_smooth
+
+    return t_smooth
+
+def ease_in(start, end, steps):
+    # Generate the time range
+    t = tf.linspace(start, end, steps)
+    
+    # Normalize t to [0, 1]
+    t_norm = (t - start) / (end - start)
+    
+    # Ease-in curve, cubic
+    t_ease_in = tf.math.pow(t_norm, 3)
+    
+    # Scale it back to [start, end]
+    t_ease_in = start + (end - start) * t_ease_in
+    
+    return t_ease_in
 
 @dataclass
 class DiffusionHyperParams(MutableHyperParams):
@@ -158,18 +194,19 @@ class DiffusionHyperParams(MutableHyperParams):
     beta_start: float = 0.0001  # beta value at the first timestep
     beta_end: float = 0.2  # beta value at the last timestep
     beta: tf.Tensor = tf.constant(-1)
-    beta_schedule_type: str = "linear"  # "linear" or "cos"
-    loss_fn: Callable = MeanSquaredError() 
+    beta_schedule_type: str = "linear"  # "linear" or "cos", "easein"
+    loss_fn: Callable = MeanSquaredError()
 
     def __post_init__(self):
         if self.beta == -1:
             if self.beta_schedule_type == "linear":
                 # self.beta = tf.linspace(self.beta_start, self.beta_end, self.T)
                 self.beta = tf.convert_to_tensor(np.linspace(self.beta_start, self.beta_end, self.T, dtype=np.float32))
+            elif self.beta_schedule_type == "easein":
+                beta_schedule = ease_in(self.beta_start, self.beta_end, self.T)
+                self.beta = tf.convert_to_tensor(beta_schedule, dtype=tf.float32)
             else:
-                raise Exception("TODO")
-                # beta_schedule = cos_linspace(self.beta_start, self.beta_end, self.T)
-                # self.beta = tf.convert_to_tensor(beta_schedule)
+                raise ValueError("Invalid beta schedule type")
 
 
 @dataclass
@@ -193,7 +230,6 @@ class GanHyperParams(MutableHyperParams):
     generator_training: bool = True
     gradient_penalty_factor: float = 10
     discriminator_ones_zeroes_shape: tuple = ()
-
 
     learning_rate: float = -1  # Not used
 
