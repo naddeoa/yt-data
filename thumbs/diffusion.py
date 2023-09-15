@@ -1,5 +1,4 @@
 from thumbs.params import DiffusionHyperParams, HyperParams
-from tensorflow.keras.utils import Progbar
 import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
@@ -21,12 +20,13 @@ class Diffusion:
         random_batch = next(iter(dataset))
         random_img = random_batch[:n_imgs]
 
+        min_t = 500
         t = tf.constant(
             [
-                [np.random.randint(0, self.mparams.T - 1)],
-                [np.random.randint(0, self.mparams.T - 1)],
-                [np.random.randint(0, self.mparams.T - 1)],
-                [np.random.randint(0, self.mparams.T - 1)],
+                [np.random.randint(min_t, self.mparams.T - 1)],
+                [np.random.randint(min_t, self.mparams.T - 1)],
+                [np.random.randint(min_t, self.mparams.T - 1)],
+                [np.random.randint(min_t, self.mparams.T - 1)],
             ],
             dtype=tf.int32,
         )
@@ -83,8 +83,8 @@ class Diffusion:
             if clip:
                 x = tf.clip_by_value(x, -1, 1)
 
-            if i % 100 == 0:
-                tf.print(i)
+            # if i % 100 == 0:
+            # tf.print(i)
 
         x = tf.clip_by_value(x, -1, 1)
         x = (x + 1) / 2

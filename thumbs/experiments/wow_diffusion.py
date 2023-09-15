@@ -1,28 +1,29 @@
 import thumbs.config_logging  # must be first
-import random
-import cv2
-import pandas as pd
-from itertools import zip_longest
 import tensorflow as tf
-import os
-from typing import List, Tuple, Iterator, Optional, Union
+from typing import List, Tuple, Iterator, Optional, TypedDict, Union
 from rangedict import RangeDict
 import numpy as np
 
-from thumbs.diff_augmentation import DiffAugmentLayer
 from thumbs.experiment import DiffusionExperiment
-from thumbs.loss import Loss
-from thumbs.data import get_pokemon_and_pokedexno, normalize_image, unnormalize_image, get_wow_icons_64, get_pokemon_data256
+from thumbs.data import (
+    get_pokemon_and_pokedexno,
+    normalize_image,
+    unnormalize_image,
+    get_wow_icons_64,
+    get_pokemon_data256,
+    get_wow_icons_128,
+    get_wow_icons_256,
+)
 from thumbs.params import DiffusionHyperParams, HyperParams, Sampler, MutableHyperParams
 from thumbs.model.model import GanModel, BuiltDiffusionModel, FrameworkModel, DiffusionModel
 
-from tensorflow_addons.layers import InstanceNormalization, SpectralNormalization
 from tensorflow.keras.models import Model
 from keras.losses import MeanSquaredError, MeanAbsoluteError
 from keras import Sequential
 from keras.layers import (
     Activation,
     Add,
+    LayerNormalization,
     StringLookup,
     Conv2DTranspose,
     Conv2D,
@@ -38,122 +39,91 @@ from keras.layers import (
     LeakyReLU,
     GroupNormalization,
     LayerNormalization,
+    MultiHeadAttention,
     Embedding,
     Multiply,
     Concatenate,
-    # BatchNormalizationV2,
 )
-from tensorflow.compat.v1.keras.layers import BatchNormalization as BatchNormalizationV1
-
+from thumbs.self_attention import SelfAttention
 from thumbs.train import Train, TrainDiffusion
-from tensorflow.keras.layers import Layer
 
 tf.keras.layers.Dropout  # TODO is this different than keras.layers.Dropout? Is it still broken?
 
 
-kern_size = 3
+class ModelParams(TypedDict):
+    kern_size: int
+    nuf: int
+    up_highest_f: int
+    up_blocks: List[int]
+    ns: int
+    nbn: int
+    ndf: int
+    down_highest_f: int
+    down_blocks: List[int]
 
-ngf = 64
-gen_highest_f = 4
-up_blocks = [1, 1, 1]
 
-nbn = 4
+class UpResNetLayer(tf.keras.layers.Layer):
+    def __init__(self, f, model_params, strides=1, **kwargs):
+        super(UpResNetLayer, self).__init__(**kwargs)
+        self.f = f
+        self.strides = strides
+        self.model_params = model_params
+        self.kernel_size = self.model_params["kern_size"]
+        self.channels = f * self.model_params["nuf"]
 
-ndf = 64
-disc_highest_f = 4
-down_blocks = [1, 1, 1]
+    def build(self, input_shape):
+        self.seq = Sequential()
+        self.seq.add(Conv2DTranspose(self.channels, kernel_size=self.kernel_size, strides=self.strides, padding="same"))
+        self.seq.add(GroupNormalization(1))
+        self.seq.add(Activation("gelu"))
+
+        if self.strides == 1:
+            self.seq.add(Conv2DTranspose(self.channels, kernel_size=self.kernel_size, strides=1, padding="same"))
+            self.seq.add(GroupNormalization(1))
+
+    def call(self, inputs):
+        x = self.seq(inputs)
+        if inputs.shape == x.shape:
+            x = Add()([x, inputs])
+            x = Activation("gelu")(x)
+        return x
+
+
+class DownResNetLayer(tf.keras.layers.Layer):
+    def __init__(self, f, model_params, strides=1, normalize=True, **kwargs):
+        super(DownResNetLayer, self).__init__(**kwargs)
+        self.f = f
+        self.strides = strides
+        self.normalize = normalize
+        self.model_params = model_params
+        self.kernel_size = self.model_params["kern_size"]
+        self.channels = f * self.model_params["ndf"]
+
+    def build(self, input_shape):
+        self.seq = Sequential()
+        self.seq.add(Conv2D(self.channels, kernel_size=self.kernel_size, strides=self.strides, padding="same"))
+
+        if self.normalize:
+            self.seq.add(GroupNormalization(1))
+        self.seq.add(Activation("gelu"))
+
+        if self.strides == 1:
+            self.seq.add(Conv2D(self.channels, kernel_size=self.kernel_size, strides=1, padding="same"))
+            self.seq.add(GroupNormalization(1))
+
+    def call(self, inputs):
+        x = self.seq(inputs)
+        if inputs.shape == x.shape:
+            x = Add()([x, inputs])
+            x = Activation("gelu")(x)
+        return x
+
 
 class MyModel(DiffusionModel):
-    def __init__(self, params: HyperParams, mparams: DiffusionHyperParams) -> None:
+    def __init__(self, params: HyperParams[ModelParams], mparams: DiffusionHyperParams) -> None:
         super().__init__(params, mparams)
         self.embed_dim = 256
-
-    def down_resnet(
-        self,
-        f: int,
-        x,
-        strides: int,
-        kernel_size: int = kern_size,
-        normalize=True,
-    ):
-        channels = f * ndf
-        input_x = x
-        seq = Sequential()
-        seq.add(
-            Conv2D(
-                channels,
-                kernel_size=kernel_size,
-                strides=strides,
-                padding="same",
-            )
-        )
-
-        if normalize:
-            seq.add(GroupNormalization(1))
-        # seq.add(ReLU())
-        seq.add(tf.keras.layers.Activation("gelu"))
-
-        if strides == 1:
-            seq.add(
-                Conv2D(
-                    channels,
-                    kernel_size=kernel_size,
-                    strides=1,
-                    padding="same",
-                )
-            )
-            seq.add(GroupNormalization(1))
-
-        x = seq(x)
-        if input_x.shape == x.shape:
-            x = Add()([x, input_x])
-            # x = ReLU()(x)
-            x = tf.keras.layers.Activation("gelu")(x)
-
-        return x
-
-    def up_resnet(
-        self,
-        f: int,
-        x,
-        strides: int,
-        kernel_size: int,
-    ):
-        channels = f * ngf
-        input_x = x
-
-        seq = Sequential()
-        seq.add(
-            Conv2DTranspose(
-                channels,
-                kernel_size=kernel_size,
-                strides=strides,
-                padding="valid" if kernel_size > kern_size else "same",
-                use_bias=True,
-            )
-        )
-        seq.add(GroupNormalization(1))
-        # seq.add(ReLU())
-        seq.add(tf.keras.layers.Activation("gelu"))
-
-        if strides == 1 and kernel_size == kern_size:
-            seq.add(
-                Conv2DTranspose(
-                    channels,
-                    kernel_size=kernel_size,
-                    strides=1,
-                    padding="same",
-                    use_bias=True,
-                )
-            )
-            seq.add(GroupNormalization(1))
-
-        x = seq(x)
-        if input_x.shape == x.shape:
-            x = Add()([x, input_x])
-            # x = ReLU()(x)
-            x = tf.keras.layers.Activation("gelu")(x)
-        return x
+        self.model_params = params.model_params
 
     def concat_embedding(self, x, embedding, name: str):
         _, H, W, C = x.shape
@@ -179,7 +149,7 @@ class MyModel(DiffusionModel):
                 Dense(C),
             ],
             name=name,
-        )  # Going to be  (batch_size, 256)
+        )
 
         _x = s(t)
         # Need to turn it into a (batch_size, H, W, 256) tensor so it can be added
@@ -195,43 +165,55 @@ class MyModel(DiffusionModel):
 
         x = img_input
 
-        seed = Sequential(
-            [
-                Conv2D(img_input.shape[1], kernel_size=3, strides=1, padding="same", use_bias=True),
-                GroupNormalization(1),
-                tf.keras.layers.Activation("gelu"),
-            ],
-            name="initial",
-        )
-        x = seed(x)
+        down_highest_f = self.model_params["down_highest_f"]
+        down_blocks = self.model_params["down_blocks"]
+        nbn = self.model_params["nbn"]
+        up_highest_f = self.model_params["up_highest_f"]
+        up_blocks = self.model_params["up_blocks"]
+        ndf = self.model_params["ndf"]
+        nuf = self.model_params["nuf"]
+
+        # Seed block
+        for i in range(self.model_params["ns"]):
+            x = DownResNetLayer(1, self.model_params, strides=1, name=f"seed_{i}")(x)
 
         # Down stack
         downs = [x]
-        for i, f in enumerate(np.linspace(1, disc_highest_f, len(down_blocks), dtype=int)):
-            x = self.down_resnet(f, x, strides=2, normalize=False)
+        for i, f in enumerate(np.linspace(1, down_highest_f, len(down_blocks), dtype=int)):
+            x = DownResNetLayer(f, self.model_params, strides=2, normalize=False, name=f"down_resnet_f{f}")(x)
 
-            for _ in range(down_blocks[i]):
-                x = self.down_resnet(f, x, strides=1)
+            for j in range(down_blocks[i]):
+                x = DownResNetLayer(f, self.model_params, name=f"down_resnet_f{f}-{j}")(x)
+
+            if i >= len(down_blocks) - 2:
+                x = SelfAttention(f * ndf)(x)
 
             x = self.positional_encoding_layer(x, t_pos, name=f"pos_down{i}")
 
             if i < len(down_blocks) - 1:
                 downs.append(x)
 
-        assert len(downs) == 3
         downs.reverse()
 
-        # bottleneck convolutions
+        # Bottleneck
         for i in range(nbn):
-            x = self.down_resnet(f, x, strides=1)
+            # x = self.down_resnet(f, x, strides=1)
+            x = DownResNetLayer(f, self.model_params, name=f"bottleneck_{i}")(x)
+            x = SelfAttention(f * ndf)(x)
 
         # Up stack
-        for i, f in enumerate(np.linspace(gen_highest_f, 1, len(up_blocks), dtype=int)):
-            x = self.up_resnet(f, x, strides=2, kernel_size=kern_size)
-            x = Concatenate(name=f"resnet_concat_{i}")([x, downs[i]])  # Unet concat with the down satck variant
+        for i, f in enumerate(np.linspace(up_highest_f, 1, len(up_blocks), dtype=int)):
+            # x = self.up_resnet(f, x, strides=2)
+            x = UpResNetLayer(f, self.model_params, strides=2, name=f"up_resnet_f{f}")(x)
+            x = Concatenate(name=f"unet_concat_{i}")([x, downs[i]])  # Unet concat with the down satck variant
 
-            for _ in range(up_blocks[i]):
-                x = self.up_resnet(f, x, strides=1, kernel_size=kern_size)
+            for j in range(up_blocks[i]):
+                # x = self.up_resnet(f, x, strides=1)
+                x = UpResNetLayer(f, self.model_params, name=f"up_resnet_f{f}-{j}")(x)
+
+            if i < len(up_blocks) - 2:
+                # Skipping this last one saves on a massive amount of memory
+                x = SelfAttention(f * nuf)(x)
 
             x = self.positional_encoding_layer(x, t_pos, name=f"pos_up{i}")  # add positional information back in
 
@@ -243,13 +225,14 @@ class MyExperiment(DiffusionExperiment):
     def __init__(self) -> None:
         super().__init__()
         # self.data = get_pokemon_data256((64,64,3))
-        self.data = get_wow_icons_64()
+        self.data = get_wow_icons_128()
+        # self.data = get_wow_icons_256()
 
     def augment_data(self) -> bool:
-        return False 
+        return False
 
     def get_data(self) -> Union[np.ndarray, tf.data.Dataset]:
-        return self.data
+        return self.data.take(1000)
 
     def get_train(self, model: BuiltDiffusionModel, mparams: DiffusionHyperParams) -> Train:
         return TrainDiffusion(model, self.params, mparams)
@@ -258,13 +241,14 @@ class MyExperiment(DiffusionExperiment):
         schedule = RangeDict()
         schedule[0, 100000] = DiffusionHyperParams(
             learning_rate=0.0002,
-            batch_size=128,
+            batch_size=4,
             iterations=100000,
-            sample_interval=1,
-
+            sample_interval=5,
+            model_save_interval=1,
+            checkpoint_interval=10,
             T=1000,
-            beta_start = .0001,
-            beta_end = 0.04,
+            beta_start=0.0001,
+            beta_end=0.04,
             beta_schedule_type="easein",
             loss_fn=MeanAbsoluteError(),
         )
@@ -272,11 +256,26 @@ class MyExperiment(DiffusionExperiment):
         return schedule
 
     def get_params(self) -> HyperParams:
-        return HyperParams(
-            latent_dim=100,  # gen_highest_f * ngf,
-            name="wow_diffusion_mae_easein",
-            img_shape=(64, 64, 3),
+        return HyperParams[ModelParams](
+            latent_dim=100,
+            name="wow_diffusion_mae_128_attn",
+            img_shape=(128, 128, 3),
             sampler=Sampler.NORMAL,
+            model_params=ModelParams(
+                kern_size=3,
+                # Up stack
+                nuf=32,
+                up_highest_f=8,
+                up_blocks=[1, 1, 1, 1],
+                # Seed blocks
+                ns=2,
+                # Bottleneck blocks
+                nbn=4,
+                # Down stack
+                ndf=32,
+                down_highest_f=8,
+                down_blocks=[1, 1, 1, 1],
+            ),
         )
 
     def get_model(self, mparams: DiffusionHyperParams) -> FrameworkModel:

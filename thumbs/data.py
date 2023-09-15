@@ -2,7 +2,6 @@ import json
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import pandas as pd
-from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.decomposition import PCA
 from tqdm.auto import tqdm
 import PIL
@@ -229,12 +228,48 @@ def get_wow_icons_64(size: Tuple[int, int, int] = (64, 64, 3)) -> tf.data.Datase
         return img
 
     dataset = tf.data.Dataset.list_files("/mnt/e/data/wow-icons/*.PNG").map(load_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    # num_items = 0
-    # for _ in dataset:
-    #     num_items += 1
+    return dataset
 
-    # print(f"Found {num_items} wow icons.")
 
+
+
+
+
+
+def get_wow_icons_128() -> tf.data.Dataset:
+    size = (128, 128, 3)
+
+    def load_image(file_path):
+        img = tf.io.read_file(file_path)
+        img = tf.image.decode_jpeg(img, channels=3)
+        img = tf.image.resize(img, size[:2])
+        img = (img - 127.5) / 127.5  # Normalize to [-1,1]
+        return img
+
+    dataset = tf.data.Dataset.list_files("/mnt/e/data/wow-icons-128/*.jpg").map(
+        load_image, num_parallel_calls=tf.data.experimental.AUTOTUNE
+    )
+
+    return dataset
+
+
+def get_wow_icons_256() -> tf.data.Dataset:
+    size = (256, 256, 3)
+
+    def load_image(file_path):
+        img = tf.io.read_file(file_path)
+        img = tf.image.decode_jpeg(img, channels=3)
+        img = tf.image.resize(img, size[:2])
+        img = (img - 127.5) / 127.5  # Normalize to [-1,1]
+        return img
+
+    dataset = tf.data.Dataset.list_files("/mnt/e/data/wow-icons-256/*.jpg").map(
+        load_image, num_parallel_calls=tf.data.experimental.AUTOTUNE
+    )
+
+    num_items = 0
+    for _ in dataset:
+        num_items += 1
     return dataset
 
 

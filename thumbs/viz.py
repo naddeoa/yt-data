@@ -250,7 +250,7 @@ def visualize_grid(
     elif cols is not None:
         rows = int(np.ceil(n_images / cols))
 
-    fig, axes = plt.subplots(rows, cols, figsize=(cols * 3, rows * 4))
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 3, rows * 3))
 
     # Make sure axes is an array (useful for edge cases with 0 row or 1 column)
     axes = np.array(axes).reshape(-2)
@@ -264,7 +264,7 @@ def visualize_grid(
     # Turn off any extra subplots
     for ax in axes[n_images:]:
         ax.axis("off")
-
+    plt.tight_layout()    
     if is_notebook():
         plt.show()
     if dir is not None and file_name is not None:

@@ -1,4 +1,5 @@
 import tensorflow as tf
+import time
 import json
 import numpy as np
 from thumbs.diffusion import Diffusion
@@ -230,7 +231,9 @@ class Train(ABC, Generic[MParams, BuiltModel]):
             for item in tqdm(dataset, position=1 if not is_colab() else 0, leave=False if not is_colab() else True, desc="batch"):
                 losses = self.train_body(item, dataset)
 
-                progress.set_postfix(losses)
+                formated_loss = {k: trunc(v) for k, v in losses.items()}
+                progress.set_postfix(formated_loss)
+
                 for k, v in self.get_loss_plot(losses).items():
                     if k not in loss:
                         loss[k] = []
@@ -326,10 +329,15 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
         self.diffusion = Diffusion(mparams, params, built_model.model)
 
     def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
-        # return self.diffusion.show_samples(dataset, file_name, rows, cols)
+        # show how good it is at predicting total noise
+        self.diffusion.show_samples(dataset, file_name, rows, cols)
+
+        start = time.perf_counter()
         samples = self.diffusion.sample(rows * cols, clip=False)
+        end = time.perf_counter()
+        print(f"Sampled {rows * cols} images in {end - start:0.4f} seconds")
         dir = self.params.prediction_path
-        return visualize_grid(samples.numpy(), rows=rows, normalized=False, dir=dir, file_name=file_name)
+        visualize_grid(samples.numpy(), rows=rows, normalized=False, dir=dir, file_name=file_name)
 
     def load_weights(self):
         load_weights(self.built_model.model, self.params.weight_path)
@@ -345,25 +353,18 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
             "Loss": losses["loss"] if isinstance(losses["loss"], float) else float(losses["loss"].numpy()),
         }
 
+    @tf.function
     def train_body(self, data, dataset: tf.data.Dataset) -> Dict[str, Union[float, tf.Tensor]]:
         # Apparently we don't want to ever sample 0
         t = tf.random.uniform(shape=(self.mparams.batch_size,), minval=1, maxval=self.mparams.T, dtype=tf.int32)
-
-        # Generate noisy image and real noise for this timestep
-        # Assuming you have a function forward_diffusion_sample to do this
         noisy_item, real_noise = self.diffusion.add_noise(data, t)
 
         with tf.GradientTape() as tape:
-            # Forward pass: Get model's prediction of the noise added at this timestep
             predicted_noise = self.built_model.model([noisy_item, t], training=True)
-
-            # Compute loss between the real noise and the predicted noise
             loss = self.mparams.loss_fn(real_noise, predicted_noise)
 
-        # Backprop and update weights
         grads = tape.gradient(loss, self.built_model.model.trainable_variables)
         self.built_model.optimizer.apply_gradients(zip(grads, self.built_model.model.trainable_variables))
-
         return {"loss": loss}
 
 

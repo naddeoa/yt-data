@@ -47,7 +47,13 @@ class DiffusionModel(FrameworkModel[BuiltDiffusionModel, DiffusionHyperParams]):
     def build(self) -> BuiltDiffusionModel:
         model = self.get_model()
         model.summary(line_length=200)
-        tf.keras.utils.plot_model(model, to_file=self.params.model_diagram_path, show_shapes=True, dpi=64, expand_nested=True)
+
+        # Create a high level diagram so you get the gist
+        tf.keras.utils.plot_model(model, to_file=self.params.model_diagram_path, show_shapes=True, dpi=64, expand_nested=False)
+
+        # And a verbose one for debugging
+        file_name_verbose = self.params.model_diagram_path.replace(".jpg", "_verbose.jpg")
+        tf.keras.utils.plot_model(model, to_file=file_name_verbose, show_shapes=True, dpi=64, expand_nested=True, show_trainable=True)
 
         return BuiltDiffusionModel(
             model=model,
@@ -94,9 +100,13 @@ class GanModel(FrameworkModel[BuiltGANModel, GanHyperParams]):
         )
 
         discriminator.summary(line_length=200)
-        tf.keras.utils.plot_model(discriminator, to_file=self.params.dis_diagram_path, show_shapes=True, dpi=64, expand_nested=True)
+        tf.keras.utils.plot_model(
+            discriminator, to_file=self.params.dis_diagram_path, show_shapes=True, dpi=64, expand_nested=False, show_trainable=True
+        )
         generator.summary(line_length=200)
-        tf.keras.utils.plot_model(generator, to_file=self.params.gen_diagram_path, show_shapes=True, dpi=64, expand_nested=True)
+        tf.keras.utils.plot_model(
+            generator, to_file=self.params.gen_diagram_path, show_shapes=True, dpi=64, expand_nested=False, show_trainable=True
+        )
 
         return BuiltGANModel(
             discriminator=discriminator,

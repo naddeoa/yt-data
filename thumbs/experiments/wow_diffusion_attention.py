@@ -45,6 +45,7 @@ from keras.layers import (
     # BatchNormalizationV2,
 )
 from tensorflow.compat.v1.keras.layers import BatchNormalization as BatchNormalizationV1
+from thumbs.self_attention import SelfAttention
 
 from thumbs.train import Train, TrainDiffusion
 from tensorflow.keras.layers import Layer
@@ -63,40 +64,6 @@ nbn = 4
 ndf = 64
 disc_highest_f = 4
 down_blocks = [1, 1, 1]
-
-
-class SelfAttention(tf.keras.layers.Layer):
-    def __init__(self, channels):
-        super(SelfAttention, self).__init__()
-        self.channels = channels
-        self.mha = tf.keras.layers.MultiHeadAttention(num_heads=4, key_dim=channels)
-        self.ln = tf.keras.layers.LayerNormalization(axis=-1)
-        self.ff_self = tf.keras.Sequential(
-            [
-                tf.keras.layers.LayerNormalization(axis=-1),
-                tf.keras.layers.Dense(channels, activation=None),
-                tf.keras.layers.Activation("gelu"),
-                tf.keras.layers.Dense(channels, activation=None),
-            ]
-        )
-
-    def call(self, x):
-        # print(f'orig x shape: {x.shape}')
-        orig = x
-        size = x.shape[1]
-        # print(f'orig size: {size}')
-        x = tf.reshape(x, (-1, size * size, self.channels))
-        x_ln = self.ln(x)
-        attention_value = self.mha(x_ln, x_ln, x_ln)  # MultiHeadAttention in TF doesn't return attention scores by default
-        # print(f'orig attention value shape: {attention_value.shape}')
-        attention_value += x
-        attention_value = self.ff_self(attention_value) + attention_value
-        x = tf.reshape(attention_value, (-1, size, size, self.channels))
-
-        # print('====================')
-        # print()
-        assert orig.shape == x.shape
-        return x
 
 
 class MyModel(DiffusionModel):
@@ -298,10 +265,24 @@ class MyExperiment(DiffusionExperiment):
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
-        schedule[0, 100000] = DiffusionHyperParams(
+        schedule[0, 400] = DiffusionHyperParams(
             learning_rate=0.0002,
             batch_size=64,
-            iterations=100000,
+            iterations=400,
+            sample_interval=10,
+            model_save_interval=1,
+            checkpoint_interval=10,
+            T=1000,
+            beta_start=0.0001,
+            beta_end=0.04,
+            beta_schedule_type="easein",
+            loss_fn=MeanAbsoluteError(),
+        )
+
+        schedule[401, 800] = DiffusionHyperParams(
+            learning_rate=0.00002,
+            batch_size=64,
+            iterations=800,
             sample_interval=10,
             model_save_interval=1,
             checkpoint_interval=10,

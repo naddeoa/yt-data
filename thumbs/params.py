@@ -1,10 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from keras.losses import MeanSquaredError, MeanAbsoluteError
 import tensorflow as tf
 import yaml
 import os
 import numpy as np
-from typing import Tuple, Optional, List, Callable, Dict
+from typing import Mapping, Tuple, Optional, List, Callable, Dict, TypeVar, Generic, cast
 from enum import Enum
 
 
@@ -23,8 +23,11 @@ class TurnMode(Enum):
     SAME_SAMPLES = 1
 
 
+MParams = TypeVar("MParams")
+
+
 @dataclass
-class HyperParams:
+class HyperParams(Generic[MParams]):
     latent_dim: int  # = 150
     name: str  # = "pokemon_deep_1L_clipped-0.5_gp-0"
 
@@ -35,6 +38,7 @@ class HyperParams:
 
     similarity_threshold: float = 0  # = 0.0
     similarity_penalty: float = 10  # = 10.0
+    model_params: MParams = field(default_factory=lambda: cast(MParams, {}))  # hack but it works
 
     def latent_sample(self, batch_size: int) -> np.ndarray:
         if self.sampler == Sampler.UNIFORM:
@@ -137,7 +141,7 @@ class MutableHyperParams:
     def __post_init__(self):
         if self.checkpoint_interval == -1:
             self.checkpoint_interval = self.sample_interval * 10
-        
+
         if self.model_save_interval == -1:
             self.model_save_interval = self.sample_interval
 
@@ -173,27 +177,29 @@ def in_out_easing(start, end, steps):
 
     return t_smooth
 
+
 def ease_in(start, end, steps):
     # Generate the time range
     t = tf.linspace(start, end, steps)
-    
+
     # Normalize t to [0, 1]
     t_norm = (t - start) / (end - start)
-    
+
     # Ease-in curve, cubic
     t_ease_in = tf.math.pow(t_norm, 3)
-    
+
     # Scale it back to [start, end]
     t_ease_in = start + (end - start) * t_ease_in
-    
+
     return t_ease_in
+
 
 @dataclass
 class DiffusionHyperParams(MutableHyperParams):
     T: int = 1000
     beta_start: float = 0.0001  # beta value at the first timestep
     beta_end: float = 0.2  # beta value at the last timestep
-    beta: tf.Tensor = tf.constant(-1)
+    beta: tf.Tensor = field(default=tf.constant(-1), repr=False)
     beta_schedule_type: str = "linear"  # "linear" or "cos", "easein"
     loss_fn: Callable = MeanSquaredError()
 
