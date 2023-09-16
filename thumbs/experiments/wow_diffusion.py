@@ -232,7 +232,7 @@ class MyExperiment(DiffusionExperiment):
         return False
 
     def get_data(self) -> Union[np.ndarray, tf.data.Dataset]:
-        return self.data.take(1000)
+        return self.data
 
     def get_train(self, model: BuiltDiffusionModel, mparams: DiffusionHyperParams) -> Train:
         return TrainDiffusion(model, self.params, mparams)

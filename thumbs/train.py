@@ -139,12 +139,10 @@ class Train(ABC, Generic[MParams, BuiltModel]):
         params: HyperParams,
         mparams: MParams,
         label_getter: LabelGetter = None,
-        input_mapper: InputMapper = DefaultInputMapper(),
     ) -> None:
         self.mparams = mparams
         self.built_model = built_model
         self.label_getter = label_getter
-        self.input_mapper = input_mapper
         self.params = params
         self.loss = Loss(params)
 
@@ -272,23 +270,7 @@ class Train(ABC, Generic[MParams, BuiltModel]):
             iter_checkpoint_file_name = self.params.iteration_checkpoints_path.split("/")[-1]
             save_as_json(self.iteration_checkpoints, f"{checkpoint_path}/{iteration}/{iter_checkpoint_file_name}")
 
-        if (iteration) % sample_interval == 0:
-            file_name = str(iteration)
-            self.show_samples(file_name=file_name, dataset=dataset)
-            show_loss_plot(
-                self.losses,
-                self.iteration_checkpoints,
-                dir=self.params.prediction_path,
-                file_name=file_name,
-            )
-
-            # Show the plot again but only use the last 50 items for each series
-            most_recent = {k: v[-50:] for k, v in self.losses.items()}
-
-            show_loss_plot(
-                most_recent, self.iteration_checkpoints[-50:], dir=self.params.prediction_path, file_name="zoom", save_as_latest=False
-            )
-
+        updated_loss_state = False
         if (iteration) % self.mparams.model_save_interval == 0:
             # Save losses and accuracies so they can be plotted after training
             self.save_weights()
@@ -306,10 +288,27 @@ class Train(ABC, Generic[MParams, BuiltModel]):
             # save_as_json(self.accuracies, self.params.accuracy_path)
             save_as_json(self.losses, self.params.loss_path)
             save_as_json(self.iteration_checkpoints, self.params.iteration_checkpoints_path)
+            updated_loss_state = True
 
-            return True
-        else:
-            return False
+        # This part comes after the previous because update self.losses first.
+        if (iteration) % sample_interval == 0:
+            file_name = str(iteration)
+            self.show_samples(file_name=file_name, dataset=dataset)
+            show_loss_plot(
+                self.losses,
+                self.iteration_checkpoints,
+                dir=self.params.prediction_path,
+                file_name=file_name,
+            )
+
+            # Show the plot again but only use the last 50 items for each series
+            most_recent = {k: v[-50:] for k, v in self.losses.items()}
+
+            show_loss_plot(
+                most_recent, self.iteration_checkpoints[-50:], dir=self.params.prediction_path, file_name="zoom", save_as_latest=False
+            )
+
+        return updated_loss_state
 
     @abstractmethod
     def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
@@ -323,14 +322,13 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
         params: HyperParams,
         mparams: DiffusionHyperParams,
         label_getter: LabelGetter = None,
-        input_mapper: InputMapper = DefaultInputMapper(),
     ) -> None:
-        super().__init__(built_model, params, mparams, label_getter, input_mapper)
+        super().__init__(built_model, params, mparams, label_getter)
         self.diffusion = Diffusion(mparams, params, built_model.model)
 
     def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
         # show how good it is at predicting total noise
-        self.diffusion.show_samples(dataset, file_name, rows, cols)
+        self.diffusion.show_samples(dataset, file_name)
 
         start = time.perf_counter()
         samples = self.diffusion.sample(rows * cols, clip=False)
@@ -369,6 +367,17 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
 
 
 class TrainGAN(Train[GanHyperParams, BuiltGANModel]):
+    def __init__(
+        self,
+        built_model: BuiltGANModel,
+        params: HyperParams,
+        mparams: GanHyperParams,
+        label_getter: LabelGetter = None,
+        input_mapper: InputMapper = DefaultInputMapper(),
+    ) -> None:
+        super().__init__(built_model, params, mparams, label_getter)
+        self.input_mapper = input_mapper
+
     def save_weights(self):
         self.built_model.generator.save_weights(self.params.gen_weight_path)
         self.built_model.discriminator.save_weights(self.params.dis_weight_path)
@@ -547,6 +556,108 @@ class TrainWassersteinGP(TrainGAN):
         # Update the weights of the generator using the generator optimizer
         self.apply_generator_gradients(gen_gradient)
         return g_loss, other
+
+
+class GanDiffusion(Diffusion):
+    def __init__(self, mparams: DiffusionHyperParams, params: HyperParams, model, gan_mparams: GanHyperParams) -> None:
+        super().__init__(mparams, params, model)
+        self.gan_mparams = gan_mparams
+
+    def call_model(self, x, t):
+        z = self.params.latent_sample(x.shape[0])
+        return self.model([z, x, t], training=False)
+
+
+class TrainWassersteinDiffusion(TrainWassersteinGP):
+    def __init__(
+        self,
+        built_model: BuiltGANModel,
+        params: HyperParams,
+        mparams: GanHyperParams,
+        diffusion_mparams: DiffusionHyperParams,
+        label_getter: LabelGetter = None,
+    ) -> None:
+        self.diffusion = GanDiffusion(diffusion_mparams, params, built_model.generator, mparams)
+        super().__init__(built_model, params, mparams, label_getter)
+
+    def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
+        # show how good it is at predicting total noise
+        self.diffusion.show_samples(dataset, file_name)
+
+        start = time.perf_counter()
+        samples = self.diffusion.sample(rows * cols, clip=False)
+        end = time.perf_counter()
+        print(f"Sampled {rows * cols} images in {end - start:0.4f} seconds")
+        dir = self.params.prediction_path
+        visualize_grid(samples.numpy(), rows=rows, normalized=False, dir=dir, file_name=file_name)
+
+    @tf.function
+    def gradient_penalty(self, predicted_noise, real_noise, noisy_imgs, t):
+        """Calculates the gradient penalty.
+
+        This loss is calculated on an interpolated image
+        and added to the discriminator loss.
+        """
+        alpha = tf.random.normal([self.mparams.batch_size, 1, 1, 1], 0.0, 1.0)
+        diff = predicted_noise - real_noise
+        interpolated = real_noise + alpha * diff
+
+        with tf.GradientTape() as gp_tape:
+            gp_tape.watch(interpolated)
+            # 1. Get the discriminator output for this interpolated image.
+            pred = self.built_model.discriminator([noisy_imgs, interpolated, t], training=True)
+
+        # 2. Calculate the gradients w.r.t to this interpolated image.
+        grads = gp_tape.gradient(pred, [interpolated])[0]
+        # 3. Calculate the norm of the gradients.
+        norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3]))
+        gp = tf.reduce_mean((norm - 1.0) ** 2)
+        return gp
+
+    @tf.function
+    def train_generator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+        t = tf.random.uniform(shape=(self.mparams.batch_size,), minval=1, maxval=self.diffusion.mparams.T, dtype=tf.int32)
+        noisy_item, real_noise = self.diffusion.add_noise(data, t)
+
+        with tf.GradientTape() as tape:
+            # Generate fake images using the generator
+            predicted_noise = self.built_model.generator([z, noisy_item, t], training=True)
+            # Get the discriminator logits for fake images
+            disc_output = self.built_model.discriminator([noisy_item, predicted_noise, t], training=True)
+            g_loss, other = self.generator_loss(disc_output, predicted_noise, real_noise)
+
+        # Get the gradients w.r.t the generator loss
+        gen_gradient = tape.gradient(g_loss, self.built_model.generator.trainable_variables)
+
+        # Update the weights of the generator using the generator optimizer
+        self.apply_generator_gradients(gen_gradient)
+        return g_loss, other
+
+    @tf.function
+    def train_discriminator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+        t = tf.random.uniform(shape=(self.mparams.batch_size,), minval=1, maxval=self.diffusion.mparams.T, dtype=tf.int32)
+        noisy_item, real_noise = self.diffusion.add_noise(data, t)
+
+        with tf.GradientTape() as tape:
+            predicted_noise = self.built_model.generator([z, noisy_item, t], training=True)
+            real_logits = self.built_model.discriminator([noisy_item, real_noise, t], training=True)
+            fake_logits = self.built_model.discriminator([noisy_item, predicted_noise, t], training=True)
+
+            # Calculate the discriminator loss using the fake and real image logits
+            d_cost, other = self.discriminator_loss(real_img=real_logits, fake_img=fake_logits)
+            # Calculate the gradient penalty
+            if self.mparams.gradient_penalty_factor > 0:
+                gp = self.gradient_penalty(predicted_noise, real_noise, noisy_item, t) * self.mparams.gradient_penalty_factor
+            else:
+                gp = 0
+
+            d_loss = d_cost + gp
+
+        # Get the gradients w.r.t the discriminator loss
+        d_gradient = tape.gradient(d_loss, self.built_model.discriminator.trainable_variables)
+        # Update the weights of the discriminator using the discriminator optimizer
+        self.apply_discriminator_gradients(d_gradient)
+        return d_loss, other
 
 
 class TrainBCE(TrainGAN):

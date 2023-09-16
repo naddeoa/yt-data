@@ -124,7 +124,7 @@ class MutableHyperParams:
     iterations: int  # = 200_000
     batch_size: int  # = 128
     sample_interval: int  # = 100
-    model_save_interval: int = -1
+    model_save_interval: int = 1
     learning_rate: float = -1
     checkpoint_interval: int = -1
     clipnorm: Optional[float] = None
@@ -141,9 +141,6 @@ class MutableHyperParams:
     def __post_init__(self):
         if self.checkpoint_interval == -1:
             self.checkpoint_interval = self.sample_interval * 10
-
-        if self.model_save_interval == -1:
-            self.model_save_interval = self.sample_interval
 
 
 import numpy as np

@@ -6,8 +6,10 @@ from typing import cast
 
 from thumbs.viz import visualize_thumbnails
 
+from abc import ABC
 
-class Diffusion:
+
+class Diffusion(ABC):
     def __init__(self, mparams: DiffusionHyperParams, params: HyperParams, model) -> None:
         self.mparams = mparams
         self.params = params
@@ -15,25 +17,22 @@ class Diffusion:
         self.alpha = 1.0 - mparams.beta
         self.alpha_hat = tf.math.cumprod(self.alpha, axis=0)
 
-    def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
-        n_imgs = 4
-        random_batch = next(iter(dataset))
-        random_img = random_batch[:n_imgs]
+    def call_model(self, x, t):
+        return self.model([x, t], training=False)
 
-        min_t = 500
-        t = tf.constant(
-            [
-                [np.random.randint(min_t, self.mparams.T - 1)],
-                [np.random.randint(min_t, self.mparams.T - 1)],
-                [np.random.randint(min_t, self.mparams.T - 1)],
-                [np.random.randint(min_t, self.mparams.T - 1)],
-            ],
-            dtype=tf.int32,
-        )
+    def show_samples(self, dataset: tf.data.Dataset, file_name=None):
+        n_imgs = 9
+        random_batch = next(iter(dataset.unbatch().batch(n_imgs)))
+        random_img = random_batch
+
+        t_values = [self.mparams.T - i for i in range(100, self.mparams.T, 100)]
+        t_tensor = tf.constant(t_values, dtype=tf.int32)
+        t = tf.reshape(t_tensor, shape=(-1, 1))
 
         noisy, real_noise = self.add_noise(random_img, t)
         # Predict the noise
-        predicted_noise = self.model([noisy, t], training=False)
+        # predicted_noise = self.model([noisy, t], training=False)
+        predicted_noise = self.call_model(noisy, t)
 
         dir = self.params.prediction_path
         imgs_per_row = 4
@@ -44,13 +43,13 @@ class Diffusion:
                 "Original",
                 "Reconstructed",
                 f"Noisy (t={t[i].numpy()[0]})",
-                "Predicted Noise",
+                "Predicted",
             ]
 
         denoised_img = self.remove_noise(noisy, predicted_noise, t)
         images = [random_img.numpy(), denoised_img.numpy(), noisy.numpy(), predicted_noise.numpy()]
         images = [img for sublist in zip(*images) for img in sublist]
-        visualize_thumbnails(images, rows=n_imgs, cols=imgs_per_row, dir=dir, file_name=file_name, label_list=labels)
+        visualize_thumbnails(images, rows=n_imgs, cols=imgs_per_row, dir=dir, file_name=file_name, label_list=labels, figize=(5, 12))
 
     @tf.function
     def sample(
@@ -62,7 +61,8 @@ class Diffusion:
         start = self.mparams.T - 1
         for i in tf.range(start, 0, -1):
             t = tf.ones(n, dtype=tf.int32) * i
-            predicted_noise = self.model([x, t], training=False)
+            # predicted_noise = self.model([x, t], training=False)
+            predicted_noise = self.call_model(x, t)
 
             alpha = tf.gather(self.alpha, t)
             alpha = tf.reshape(alpha, [-1, 1, 1, 1])
@@ -86,9 +86,9 @@ class Diffusion:
             # if i % 100 == 0:
             # tf.print(i)
 
-        x = tf.clip_by_value(x, -1, 1)
-        x = (x + 1) / 2
-        x = tf.cast(x * 255, tf.uint8)
+        # x = tf.clip_by_value(x, -1, 1)
+        # x = (x + 1) / 2
+        # x = tf.cast(x * 255, tf.uint8)
         return cast(tf.Tensor, x)
 
     def sample_2(
@@ -112,7 +112,7 @@ class Diffusion:
         return cast(np.ndarray, results.numpy())
 
     # @tf.function
-    def add_noise(self, x, t):
+    def add_noise(self, x, t, clip=False):
         sqrt_alpha_hat = tf.math.sqrt(tf.gather(self.alpha_hat, t))
         sqrt_alpha_hat = tf.reshape(sqrt_alpha_hat, [-1, 1, 1, 1])
 
@@ -120,7 +120,11 @@ class Diffusion:
         sqrt_one_minus_alpha_hat = tf.reshape(sqrt_one_minus_alpha_hat, [-1, 1, 1, 1])
 
         noise = tf.random.normal(tf.shape(x))
-        return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * noise, noise
+        noisy_image = sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * noise
+        if clip:
+            noisy_image = tf.clip_by_value(noisy_image, -1, 1)
+
+        return noisy_image, noise
 
     def remove_noise(self, x_noisy, noise, t, device="/cpu:0"):
         with tf.device(device):

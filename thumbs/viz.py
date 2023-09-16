@@ -186,11 +186,11 @@ def visualize_preprocessed_image(image, size=None):
     plt.close()
 
 
-def visualize_thumbnails(image_list, rows, cols, dir=None, file_name=None, label_list: Optional[List[str]] = None):
+def visualize_thumbnails(image_list, rows, cols, dir=None, file_name=None, label_list: Optional[List[str]] = None, figize=(10, 10)):
     plt.cla()
     plt.clf()
     # Create a grid of subplots to display the images
-    fig, axs = plt.subplots(nrows=rows, ncols=cols, figsize=(10, 10))
+    fig, axs = plt.subplots(nrows=rows, ncols=cols, figsize=figize)
 
     # Make a copy of image_list
     image_list = list(image_list)
