@@ -2,6 +2,8 @@
 
 ## Questions
 - Should I clip the generated noise to -1,1? And what about using tanh on the model?
+- How does attention identify things? Where should it go?
+- Why does my denoising process, on some epochs, result in very high values for the noised images towards the end of the noising process? Well outside of the normal distribution. The resulting images are often over exposed or mostly a single color.
 
 # Gans
 ## To try

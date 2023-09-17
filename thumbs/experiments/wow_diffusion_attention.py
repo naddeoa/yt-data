@@ -269,7 +269,7 @@ class MyExperiment(DiffusionExperiment):
             learning_rate=0.0002,
             batch_size=64,
             iterations=400,
-            sample_interval=10,
+            sample_interval=1,
             model_save_interval=1,
             checkpoint_interval=10,
             T=1000,
@@ -298,7 +298,7 @@ class MyExperiment(DiffusionExperiment):
     def get_params(self) -> HyperParams:
         return HyperParams(
             latent_dim=100,  # gen_highest_f * ngf,
-            name="wow_diffusion_attention",
+            name="wow_diffusion_attention2",
             img_shape=(64, 64, 3),
             sampler=Sampler.NORMAL,
         )

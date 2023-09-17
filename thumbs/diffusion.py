@@ -2,7 +2,7 @@ from thumbs.params import DiffusionHyperParams, HyperParams
 import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
-from typing import cast
+from typing import Tuple, cast
 
 from thumbs.viz import visualize_thumbnails
 
@@ -51,11 +51,54 @@ class Diffusion(ABC):
         images = [img for sublist in zip(*images) for img in sublist]
         visualize_thumbnails(images, rows=n_imgs, cols=imgs_per_row, dir=dir, file_name=file_name, label_list=labels, figize=(5, 12))
 
+    def sample_intermediate(
+        self,
+        n,
+        clip=False,
+        unnormalize=True,
+    ) -> Tuple[tf.Tensor, list]:
+        x = tf.random.normal((n, *self.params.img_shape))
+        start = self.mparams.T - 1
+        samples = []
+        for i in tf.range(start, 0, -1):
+            t = tf.ones(n, dtype=tf.int32) * i
+            # predicted_noise = self.model([x, t], training=False)
+            predicted_noise = self.call_model(x, t)
+
+            alpha = tf.gather(self.alpha, t)
+            alpha = tf.reshape(alpha, [-1, 1, 1, 1])
+
+            alpha_hat = tf.gather(self.alpha_hat, t)
+            alpha_hat = tf.reshape(alpha_hat, [-1, 1, 1, 1])
+
+            beta = tf.gather(self.mparams.beta, t)
+            beta = tf.reshape(beta, [-1, 1, 1, 1])
+
+            if i > 1:
+                noise = tf.random.normal(tf.shape(x))
+            else:
+                noise = tf.zeros(tf.shape(x))
+
+            _x = (1 / tf.sqrt(alpha)) * (x - ((1 - alpha) / tf.sqrt(1 - alpha_hat)) * predicted_noise)
+            x = _x + tf.sqrt(beta) * noise
+
+            samples.append((x, predicted_noise, _x))
+
+            if clip:
+                x = tf.clip_by_value(x, -1, 1)
+
+        if unnormalize:
+            x = tf.clip_by_value(x, -1, 1)
+            x = (x + 1) / 2
+            x = tf.cast(x * 255, tf.uint8)
+        return cast(tf.Tensor, x), samples
+
     @tf.function
     def sample(
         self,
         n,
         clip=False,
+        unnormalize=True,
     ) -> tf.Tensor:
         x = tf.random.normal((n, *self.params.img_shape))
         start = self.mparams.T - 1
@@ -86,9 +129,10 @@ class Diffusion(ABC):
             # if i % 100 == 0:
             # tf.print(i)
 
-        # x = tf.clip_by_value(x, -1, 1)
-        # x = (x + 1) / 2
-        # x = tf.cast(x * 255, tf.uint8)
+        if unnormalize:
+            x = tf.clip_by_value(x, -1, 1)
+            x = (x + 1) / 2
+            x = tf.cast(x * 255, tf.uint8)
         return cast(tf.Tensor, x)
 
     def sample_2(

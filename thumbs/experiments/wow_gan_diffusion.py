@@ -186,10 +186,21 @@ class MyModel(GanModel):
         gen_nbn = self.model_params["gen_nbn"]
         gen_up_highest_f = self.model_params["gen_up_highest_f"]
         gen_up_blocks = self.model_params["gen_up_blocks"]
+        gen_ndf = self.model_params["gen_ndf"]
+        gen_nuf = self.model_params["gen_nuf"]
 
         # Seed block
-        for i in range(self.model_params["gen_ns"]):
-            x = DownResNetLayer(1, self.model_params, strides=1, name=f"seed_{i}")(x)
+        # for i in range(self.model_params["gen_ns"]):
+        # x = DownResNetLayer(1, self.model_params, strides=1, name=f"seed_{i}")(x)
+        seed = Sequential(
+            [
+                Conv2D(noisy_image_input.shape[1], kernel_size=3, strides=1, padding="same", use_bias=True),
+                GroupNormalization(1),
+                tf.keras.layers.Activation("gelu"),
+            ],
+            name="initial",
+        )
+        x = seed(x)
 
         # Down stack
         downs = [x]
@@ -199,9 +210,7 @@ class MyModel(GanModel):
             for j in range(gen_down_blocks[i]):
                 x = DownResNetLayer(f, self.model_params, name=f"down_resnet_f{f}-{j}")(x)
 
-            # if i >= len(gen_down_blocks) - 2:
             # x = SelfAttention(f * gen_ndf)(x)
-
             x = self.positional_encoding_layer(x, t_pos, name=f"pos_down{i}")
 
             if i < len(gen_down_blocks) - 1:
@@ -216,11 +225,11 @@ class MyModel(GanModel):
         # Bottleneck
         for i in range(gen_nbn):
             x = DownResNetLayer(f, self.model_params, name=f"bottleneck_{i}")(x)
+            # x = SelfAttention(f * gen_ndf)(x)
             # Unclear what the right way to incorporate the latent noise vector is. Doing it here is effiecient, and
             # doing it repeatedly might make sure it pays attention more. Having the noise should allow it to predict
             # more types of noise with diff augment. I guess its ignored at worst.
             x = Concatenate(name=f"bottleneck_noise_concat_{i}")([x, z])  # TODO is this the best way?
-            # x = SelfAttention(f * gen_ndf)(x)
 
         # Up stack
         for i, f in enumerate(np.linspace(gen_up_highest_f, 1, len(gen_up_blocks), dtype=int)):
@@ -230,8 +239,8 @@ class MyModel(GanModel):
             for j in range(gen_up_blocks[i]):
                 x = UpResNetLayer(f, self.model_params, name=f"up_resnet_f{f}-{j}")(x)
 
-            # if i < len(gen_up_blocks) - 2:
-            # x = SelfAttention(f * gen_nuf)(x)
+            if i < len(gen_up_blocks) - 1:
+                x = SelfAttention(f * gen_nuf)(x)
 
             x = self.positional_encoding_layer(x, t_pos, name=f"pos_up{i}")  # add positional information back in
 
@@ -246,10 +255,10 @@ class MyModel(GanModel):
         t_pos = self.pos_encoding(t_input)
 
         x = Concatenate()([noisy_image_input, noise_input])
-        # x = DiffAugmentLayer()(x) # TODO not sure if this make sense for noise
 
         disc_down_highest_f = self.model_params["disc_down_highest_f"]
         disc_down_blocks = self.model_params["disc_down_blocks"]
+        disc_features = self.model_params["disc_features"]
 
         for i, f in enumerate(np.linspace(1, disc_down_highest_f, len(disc_down_blocks), dtype=int)):
             x = DownResNetLayer(f, self.model_params, strides=2, normalize=False, name=f"down_resnet_f{f}", use_spectral_norm=True)(x)
@@ -257,8 +266,8 @@ class MyModel(GanModel):
             for j in range(disc_down_blocks[i]):
                 x = DownResNetLayer(f, self.model_params, name=f"down_resnet_f{f}-{j}", use_spectral_norm=True)(x)
 
-            # if i >= len(disc_down_blocks) - 2:
-            # x = SelfAttention(f * disc_features)(x)
+            if i < len(disc_down_blocks) - 1:
+                x = SelfAttention(f * disc_features)(x)
 
             x = self.positional_encoding_layer(x, t_pos, name=f"pos_down{i}")
 
@@ -272,7 +281,8 @@ class MyExperiment(GanExperiment):
     def __init__(self) -> None:
         super().__init__()
         # self.data = get_pokemon_data256((64,64,3))
-        self.data = get_wow_icons_128()
+        self.data = get_wow_icons_64()
+        # self.data = get_wow_icons_128()
         # self.data = get_wow_icons_256()
 
     def augment_data(self) -> bool:
@@ -292,28 +302,29 @@ class MyExperiment(GanExperiment):
             # Only these matter
             T=1000,
             beta_start=0.0001,
-            beta_end=0.04,
-            beta_schedule_type="easein",
+            beta_end=.0085,
+            beta_schedule_type="linear",
             loss_fn=MeanAbsoluteError(),
         )
 
-        return TrainWassersteinDiffusion(model, self.params, mparams, diffusion_mparams)
+        return TrainWassersteinDiffusion(model, self.params, mparams, diffusion_mparams, diff_augment=True)
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
         schedule[0, 100000] = GanHyperParams(
-            gen_learning_rate=0.0001,
-            dis_learning_rate=0.0002,
-            batch_size=128,
+            gen_learning_rate=0.0002,
+            dis_learning_rate=0.0003,
+            batch_size=64,
             adam_b1=0.5,
             iterations=100000,
             sample_interval=1,
             model_save_interval=1,
             generator_turns=1,
-            discriminator_turns=1,
-            g_clipnorm=0.001,
-            d_clipnorm=0.001,
+            discriminator_turns=2,
+            g_clipnorm=0.01,
+            d_clipnorm=0.01,
             gradient_penalty_factor=10.0,
+            l1_loss_factor=100.0,
             # gen_weight_decay=0,
             # dis_weight_decay=0,
         )
@@ -323,8 +334,8 @@ class MyExperiment(GanExperiment):
     def get_params(self) -> HyperParams:
         return HyperParams[ModelParams](
             latent_dim=100,
-            name="wow_diffusion_gan",
-            img_shape=(128, 128, 3),
+            name="wow_diffusion_gan_64_attn_linear_diffaugment",
+            img_shape=(64, 64, 3),
             sampler=Sampler.NORMAL,
             model_params=ModelParams(
                 kern_size=3,
@@ -332,23 +343,23 @@ class MyExperiment(GanExperiment):
                 # Generator
                 #
                 # Up stack
-                gen_nuf=32,
-                gen_up_highest_f=8,
-                gen_up_blocks=[1, 1, 1, 1],
+                gen_nuf=64,
+                gen_up_highest_f=4,
+                gen_up_blocks=[1, 1, 1],
                 # Seed blocks
-                gen_ns=2,
+                gen_ns=1,
                 # Bottleneck blocks
                 gen_nbn=4,
                 # Down stack
-                gen_ndf=32,
-                gen_down_highest_f=8,
-                gen_down_blocks=[1, 1, 1, 1],
+                gen_ndf=64,
+                gen_down_highest_f=4,
+                gen_down_blocks=[1, 1, 1],
                 #
                 # Discriminator
                 #
-                disc_features=32,
+                disc_features=64,
                 disc_down_highest_f=8,
-                disc_down_blocks=[2, 2, 2, 2],
+                disc_down_blocks=[2, 2, 2],
             ),
         )
 

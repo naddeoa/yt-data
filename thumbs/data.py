@@ -231,11 +231,6 @@ def get_wow_icons_64(size: Tuple[int, int, int] = (64, 64, 3)) -> tf.data.Datase
     return dataset
 
 
-
-
-
-
-
 def get_wow_icons_128() -> tf.data.Dataset:
     size = (128, 128, 3)
 

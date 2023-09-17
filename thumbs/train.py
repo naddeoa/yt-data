@@ -2,6 +2,7 @@ import tensorflow as tf
 import time
 import json
 import numpy as np
+from thumbs.diff_augmentation import DiffAugment
 from thumbs.diffusion import Diffusion
 from thumbs.model.model import BuiltGANModel, BuiltDiffusionModel
 from tensorflow.keras.losses import MeanSquaredError, MeanAbsoluteError
@@ -331,7 +332,7 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
         self.diffusion.show_samples(dataset, file_name)
 
         start = time.perf_counter()
-        samples = self.diffusion.sample(rows * cols, clip=False)
+        samples = self.diffusion.sample(rows * cols)
         end = time.perf_counter()
         print(f"Sampled {rows * cols} images in {end - start:0.4f} seconds")
         dir = self.params.prediction_path
@@ -458,10 +459,18 @@ class TrainGAN(Train[GanHyperParams, BuiltGANModel]):
         }
 
     def get_loss_plot(self, losses: Dict[str, Union[float, tf.Tensor]]) -> Dict[str, float]:
-        return {
+        plot = {
             "Discriminator Loss": float(losses["d_loss"]),
             "Generator Loss": float(losses["g_loss"]),
         }
+
+        if self.mparams.l1_loss_factor is not None:
+            plot["L1 Loss"] = float(losses["g_l1_loss"])
+
+        if self.mparams.l2_loss_factor is not None:
+            plot["L2 Loss"] = float(losses["g_l2_loss"])
+
+        return plot
 
 
 class TrainWassersteinGP(TrainGAN):
@@ -576,22 +585,24 @@ class TrainWassersteinDiffusion(TrainWassersteinGP):
         mparams: GanHyperParams,
         diffusion_mparams: DiffusionHyperParams,
         label_getter: LabelGetter = None,
+        diff_augment: bool = False,
     ) -> None:
         self.diffusion = GanDiffusion(diffusion_mparams, params, built_model.generator, mparams)
         super().__init__(built_model, params, mparams, label_getter)
+        self.diff_augment = diff_augment
 
     def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
         # show how good it is at predicting total noise
         self.diffusion.show_samples(dataset, file_name)
 
         start = time.perf_counter()
-        samples = self.diffusion.sample(rows * cols, clip=False)
+        samples = self.diffusion.sample(rows * cols)
         end = time.perf_counter()
         print(f"Sampled {rows * cols} images in {end - start:0.4f} seconds")
         dir = self.params.prediction_path
         visualize_grid(samples.numpy(), rows=rows, normalized=False, dir=dir, file_name=file_name)
 
-    @tf.function
+    # @tf.function
     def gradient_penalty(self, predicted_noise, real_noise, noisy_imgs, t):
         """Calculates the gradient penalty.
 
@@ -617,9 +628,12 @@ class TrainWassersteinDiffusion(TrainWassersteinGP):
     @tf.function
     def train_generator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         t = tf.random.uniform(shape=(self.mparams.batch_size,), minval=1, maxval=self.diffusion.mparams.T, dtype=tf.int32)
-        noisy_item, real_noise = self.diffusion.add_noise(data, t)
 
         with tf.GradientTape() as tape:
+            if self.diff_augment:
+                data = DiffAugment(data, policy=["color", "cutout"])
+            noisy_item, real_noise = self.diffusion.add_noise(data, t)
+
             # Generate fake images using the generator
             predicted_noise = self.built_model.generator([z, noisy_item, t], training=True)
             # Get the discriminator logits for fake images
@@ -636,9 +650,12 @@ class TrainWassersteinDiffusion(TrainWassersteinGP):
     @tf.function
     def train_discriminator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         t = tf.random.uniform(shape=(self.mparams.batch_size,), minval=1, maxval=self.diffusion.mparams.T, dtype=tf.int32)
-        noisy_item, real_noise = self.diffusion.add_noise(data, t)
 
         with tf.GradientTape() as tape:
+            if self.diff_augment:
+                data = DiffAugment(data, policy=["color", "cutout"])
+            noisy_item, real_noise = self.diffusion.add_noise(data, t)
+
             predicted_noise = self.built_model.generator([z, noisy_item, t], training=True)
             real_logits = self.built_model.discriminator([noisy_item, real_noise, t], training=True)
             fake_logits = self.built_model.discriminator([noisy_item, predicted_noise, t], training=True)
