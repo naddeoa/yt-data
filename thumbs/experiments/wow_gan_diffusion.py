@@ -46,7 +46,7 @@ from keras.layers import (
     Multiply,
     Concatenate,
 )
-from thumbs.self_attention import SelfAttention
+from thumbs.self_attention import SelfAttention, PatchBasedSelfAttention
 from thumbs.train import Train, TrainDiffusion, TrainWassersteinGP, TrainWassersteinDiffusion
 
 tf.keras.layers.Dropout  # TODO is this different than keras.layers.Dropout? Is it still broken?
@@ -218,29 +218,25 @@ class MyModel(GanModel):
 
         downs.reverse()
 
-        # Convert zdim into 2 channel
-        z = Dense(8 * 8 * 2)(z_input)
-        z = Reshape((8, 8, 2))(z)
-
         # Bottleneck
         for i in range(gen_nbn):
             x = DownResNetLayer(f, self.model_params, name=f"bottleneck_{i}")(x)
-            # x = SelfAttention(f * gen_ndf)(x)
-            # Unclear what the right way to incorporate the latent noise vector is. Doing it here is effiecient, and
-            # doing it repeatedly might make sure it pays attention more. Having the noise should allow it to predict
-            # more types of noise with diff augment. I guess its ignored at worst.
-            x = Concatenate(name=f"bottleneck_noise_concat_{i}")([x, z])  # TODO is this the best way?
+
+        # Convert zdim into 2 channel
+        z = Dense(8 * 8 * 2)(z_input)
+        z = Reshape((8, 8, 2))(z)
+        x = Concatenate(name=f"bottleneck_noise_concat_{i}")([x, z])  # TODO is this the best way?
+
+        x = SelfAttention()(x)
 
         # Up stack
         for i, f in enumerate(np.linspace(gen_up_highest_f, 1, len(gen_up_blocks), dtype=int)):
             x = UpResNetLayer(f, self.model_params, strides=2, name=f"up_resnet_f{f}")(x)
             x = Concatenate(name=f"unet_concat_{i}")([x, downs[i]])  # Unet concat with the down satck variant
+            x = PatchBasedSelfAttention()(x)
 
             for j in range(gen_up_blocks[i]):
                 x = UpResNetLayer(f, self.model_params, name=f"up_resnet_f{f}-{j}")(x)
-
-            if i < len(gen_up_blocks) - 1:
-                x = SelfAttention(f * gen_nuf)(x)
 
             x = self.positional_encoding_layer(x, t_pos, name=f"pos_up{i}")  # add positional information back in
 
@@ -258,7 +254,7 @@ class MyModel(GanModel):
 
         disc_down_highest_f = self.model_params["disc_down_highest_f"]
         disc_down_blocks = self.model_params["disc_down_blocks"]
-        disc_features = self.model_params["disc_features"]
+        # disc_features = self.model_params["disc_features"]
 
         for i, f in enumerate(np.linspace(1, disc_down_highest_f, len(disc_down_blocks), dtype=int)):
             x = DownResNetLayer(f, self.model_params, strides=2, normalize=False, name=f"down_resnet_f{f}", use_spectral_norm=True)(x)
@@ -266,9 +262,7 @@ class MyModel(GanModel):
             for j in range(disc_down_blocks[i]):
                 x = DownResNetLayer(f, self.model_params, name=f"down_resnet_f{f}-{j}", use_spectral_norm=True)(x)
 
-            if i < len(disc_down_blocks) - 1:
-                x = SelfAttention(f * disc_features)(x)
-
+            x = PatchBasedSelfAttention()(x)
             x = self.positional_encoding_layer(x, t_pos, name=f"pos_down{i}")
 
         x = SpectralNormalization(Conv2D(1, kernel_size=8, strides=1, padding="valid"))(x)
@@ -302,29 +296,29 @@ class MyExperiment(GanExperiment):
             # Only these matter
             T=1000,
             beta_start=0.0001,
-            beta_end=.0085,
+            beta_end=0.0085,
             beta_schedule_type="linear",
             loss_fn=MeanAbsoluteError(),
         )
 
-        return TrainWassersteinDiffusion(model, self.params, mparams, diffusion_mparams, diff_augment=True)
+        return TrainWassersteinDiffusion(model, self.params, mparams, diffusion_mparams)
 
     def get_mutable_params(self) -> RangeDict:
         schedule = RangeDict()
         schedule[0, 100000] = GanHyperParams(
-            gen_learning_rate=0.0002,
-            dis_learning_rate=0.0003,
-            batch_size=64,
+            gen_learning_rate=0.0001,
+            dis_learning_rate=0.0002,
+            batch_size=256,
             adam_b1=0.5,
             iterations=100000,
             sample_interval=1,
             model_save_interval=1,
             generator_turns=1,
             discriminator_turns=2,
-            g_clipnorm=0.01,
-            d_clipnorm=0.01,
+            g_clipnorm=0.001,
+            d_clipnorm=0.001,
             gradient_penalty_factor=10.0,
-            l1_loss_factor=100.0,
+            l1_loss_factor=200.0,
             # gen_weight_decay=0,
             # dis_weight_decay=0,
         )
@@ -334,7 +328,7 @@ class MyExperiment(GanExperiment):
     def get_params(self) -> HyperParams:
         return HyperParams[ModelParams](
             latent_dim=100,
-            name="wow_diffusion_gan_64_attn_linear_diffaugment",
+            name="wow_diffusion_gan_64_attn_linear_batch256",
             img_shape=(64, 64, 3),
             sampler=Sampler.NORMAL,
             model_params=ModelParams(

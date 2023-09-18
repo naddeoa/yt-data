@@ -20,7 +20,13 @@ class Diffusion(ABC):
     def call_model(self, x, t):
         return self.model([x, t], training=False)
 
-    def show_samples(self, dataset: tf.data.Dataset, file_name=None):
+    def show_predicted_noise(self, dataset: tf.data.Dataset, file_name=None):
+        """
+        Generate an image that highlights the predicted noise from the model by showing
+        it along side the image it was generated for, the noisy version of that image, and
+        what the noisy version of the image would look like if you denoised it with the
+        predicted noise.
+        """
         n_imgs = 9
         random_batch = next(iter(dataset.unbatch().batch(n_imgs)))
         random_img = random_batch
@@ -138,13 +144,13 @@ class Diffusion(ABC):
     def sample_2(
         self,
         n,
-        steps_size=20,
+        steps_size=1,
     ) -> np.ndarray:
         x = tf.random.normal((n, *self.params.img_shape))
         results = tf.constant([])
         for i in tqdm(list(reversed(range(1, self.mparams.T, steps_size)))):
             t = tf.ones(n, dtype=tf.int32) * i
-            predicted_noise = self.model.predict([x, t], verbose=False)  # Assuming model accepts x and t
+            predicted_noise = self.call_model(x, t)
             x = self.remove_noise(x, predicted_noise, t)
             results = x
             if i > 1:

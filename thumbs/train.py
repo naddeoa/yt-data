@@ -2,7 +2,6 @@ import tensorflow as tf
 import time
 import json
 import numpy as np
-from thumbs.diff_augmentation import DiffAugment
 from thumbs.diffusion import Diffusion
 from thumbs.model.model import BuiltGANModel, BuiltDiffusionModel
 from tensorflow.keras.losses import MeanSquaredError, MeanAbsoluteError
@@ -203,6 +202,7 @@ class Train(ABC, Generic[MParams, BuiltModel]):
     def load_weights(self):
         raise NotImplementedError()
 
+    @tf.function
     @abstractmethod
     def train_body(self, data: tuple, dataset: tf.data.Dataset) -> Dict[str, Union[float, tf.Tensor]]:
         """
@@ -228,7 +228,9 @@ class Train(ABC, Generic[MParams, BuiltModel]):
         for iteration in progress:
             # Google colab can't handle two progress bars, so overwrite the epoch one each time.
             for item in tqdm(dataset, position=1 if not is_colab() else 0, leave=False if not is_colab() else True, desc="batch"):
+                # start_time = time.perf_counter()
                 losses = self.train_body(item, dataset)
+                # print(f"Time: {time.perf_counter() - start_time:0.4f} seconds")
 
                 formated_loss = {k: trunc(v) for k, v in losses.items()}
                 progress.set_postfix(formated_loss)
@@ -329,7 +331,7 @@ class TrainDiffusion(Train[DiffusionHyperParams, BuiltDiffusionModel]):
 
     def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
         # show how good it is at predicting total noise
-        self.diffusion.show_samples(dataset, file_name)
+        self.diffusion.show_predicted_noise(dataset, file_name)
 
         start = time.perf_counter()
         samples = self.diffusion.sample(rows * cols)
@@ -418,6 +420,7 @@ class TrainGAN(Train[GanHyperParams, BuiltGANModel]):
     def train_generator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         raise NotImplementedError()
 
+    @tf.function
     def train_body(self, item: tuple, dataset: tf.data.Dataset) -> Dict[str, Union[float, tf.Tensor]]:
         # -------------------------
         #  Train the Discriminator
@@ -445,17 +448,11 @@ class TrainGAN(Train[GanHyperParams, BuiltGANModel]):
 
             g_loss, g_other = self.train_generator(z, cur_item)
 
-        # postfix = to_postfix(d_loss, g_loss, d_other, g_other)
-        # progress.set_postfix(postfix)
-        # loss.append((float(d_loss), float(g_loss)))
-
-        d_other_float = {k: float(v) for k, v in d_other.items()}
-        g_other_float = {k: float(v) for k, v in g_other.items()}
         return {
-            "d_loss": float(d_loss),
-            "g_loss": float(g_loss),
-            **d_other_float,
-            **g_other_float,
+            "d_loss": d_loss,
+            "g_loss": g_loss,
+            **d_other,
+            **g_other,
         }
 
     def get_loss_plot(self, losses: Dict[str, Union[float, tf.Tensor]]) -> Dict[str, float]:
@@ -503,7 +500,6 @@ class TrainWassersteinGP(TrainGAN):
         fake_loss = tf.reduce_mean(fake_img)
         return fake_loss - real_loss, {"d_loss_real": real_loss, "d_loss_fake": fake_loss}
 
-    @tf.function
     def train_discriminator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         generator_input = self.input_mapper.get_generator_input(data, z)
         real_input = self.input_mapper.get_discriminator_input_real(data)
@@ -546,7 +542,6 @@ class TrainWassersteinGP(TrainGAN):
 
         return total_gen_loss, losses
 
-    @tf.function
     def train_generator(self, z, data: tuple) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         with tf.GradientTape() as tape:
             # Generate fake images using the generator
@@ -585,15 +580,13 @@ class TrainWassersteinDiffusion(TrainWassersteinGP):
         mparams: GanHyperParams,
         diffusion_mparams: DiffusionHyperParams,
         label_getter: LabelGetter = None,
-        diff_augment: bool = False,
     ) -> None:
         self.diffusion = GanDiffusion(diffusion_mparams, params, built_model.generator, mparams)
         super().__init__(built_model, params, mparams, label_getter)
-        self.diff_augment = diff_augment
 
     def show_samples(self, dataset: tf.data.Dataset, file_name=None, rows=6, cols=6):
         # show how good it is at predicting total noise
-        self.diffusion.show_samples(dataset, file_name)
+        self.diffusion.show_predicted_noise(dataset, file_name)
 
         start = time.perf_counter()
         samples = self.diffusion.sample(rows * cols)
@@ -630,8 +623,6 @@ class TrainWassersteinDiffusion(TrainWassersteinGP):
         t = tf.random.uniform(shape=(self.mparams.batch_size,), minval=1, maxval=self.diffusion.mparams.T, dtype=tf.int32)
 
         with tf.GradientTape() as tape:
-            if self.diff_augment:
-                data = DiffAugment(data, policy=["color", "cutout"])
             noisy_item, real_noise = self.diffusion.add_noise(data, t)
 
             # Generate fake images using the generator
@@ -652,8 +643,6 @@ class TrainWassersteinDiffusion(TrainWassersteinGP):
         t = tf.random.uniform(shape=(self.mparams.batch_size,), minval=1, maxval=self.diffusion.mparams.T, dtype=tf.int32)
 
         with tf.GradientTape() as tape:
-            if self.diff_augment:
-                data = DiffAugment(data, policy=["color", "cutout"])
             noisy_item, real_noise = self.diffusion.add_noise(data, t)
 
             predicted_noise = self.built_model.generator([z, noisy_item, t], training=True)

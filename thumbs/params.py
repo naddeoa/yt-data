@@ -40,23 +40,42 @@ class HyperParams(Generic[MParams]):
     similarity_penalty: float = 10  # = 10.0
     model_params: MParams = field(default_factory=lambda: cast(MParams, {}))  # hack but it works
 
-    def latent_sample(self, batch_size: int) -> np.ndarray:
+    # def latent_sample(self, batch_size: int) -> np.ndarray:
+    #     if self.sampler == Sampler.UNIFORM:
+    #         return np.random.uniform(-1, 1, (batch_size, self.latent_dim))
+    #     elif self.sampler == Sampler.NORMAL:
+    #         return np.random.normal(0, 1, (batch_size, self.latent_dim))
+    #     elif self.sampler == Sampler.UNIFORM_NORMAL:
+    #         latent = np.random.uniform(-1, 1, (batch_size, self.latent_dim))
+    #         latent += np.random.normal(0, 0.1, (batch_size, self.latent_dim))
+    #         return latent
+    #     elif self.sampler == Sampler.BERNOULLI:
+    #         return np.random.binomial(1, 0.5, (batch_size, self.latent_dim))
+    #     elif self.sampler == Sampler.CENSORED_NORMAL:
+    #         mean = 1
+    #         latent = np.random.normal(0, mean, (batch_size, self.latent_dim))
+    #         latent[latent > mean] = mean
+    #         latent[latent < -mean] = -mean
+    #         return latent
+    #     else:
+    #         raise ValueError("Invalid sampler")
+
+    def latent_sample(self, batch_size: int) -> tf.Tensor:
         if self.sampler == Sampler.UNIFORM:
-            return np.random.uniform(-1, 1, (batch_size, self.latent_dim))
+            return cast(tf.Tensor, tf.random.uniform((batch_size, self.latent_dim), minval=-1, maxval=1))
         elif self.sampler == Sampler.NORMAL:
-            return np.random.normal(0, 1, (batch_size, self.latent_dim))
+            return cast(tf.Tensor, tf.random.normal((batch_size, self.latent_dim), mean=0, stddev=1))
         elif self.sampler == Sampler.UNIFORM_NORMAL:
-            latent = np.random.uniform(-1, 1, (batch_size, self.latent_dim))
-            latent += np.random.normal(0, 0.1, (batch_size, self.latent_dim))
-            return latent
+            latent = tf.random.uniform((batch_size, self.latent_dim), minval=-1, maxval=1)
+            latent += tf.random.normal((batch_size, self.latent_dim), mean=0, stddev=0.1)
+            return cast(tf.Tensor, latent)
         elif self.sampler == Sampler.BERNOULLI:
-            return np.random.binomial(1, 0.5, (batch_size, self.latent_dim))
+            return cast(tf.Tensor, tf.random.uniform((batch_size, self.latent_dim), minval=0, maxval=1) > 0.5)
         elif self.sampler == Sampler.CENSORED_NORMAL:
             mean = 1
-            latent = np.random.normal(0, mean, (batch_size, self.latent_dim))
-            latent[latent > mean] = mean
-            latent[latent < -mean] = -mean
-            return latent
+            latent = tf.random.normal((batch_size, self.latent_dim), mean=0, stddev=mean)
+            latent = tf.clip_by_value(latent, -mean, mean)
+            return cast(tf.Tensor, latent)
         else:
             raise ValueError("Invalid sampler")
 
